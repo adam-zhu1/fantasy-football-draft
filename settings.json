@@ -1,0 +1,39 @@
+{
+  "league_name": "RIP EVAN LU",
+  "platform": "espn",
+  "my_team_name": "fn",
+  "num_teams": 12,
+  "scoring": "ppr",
+  "scoring_detail": {
+    "pass_yd": 0.04,
+    "pass_td": 4,
+    "int": -2,
+    "rush_yd": 0.1,
+    "rush_td": 6,
+    "rec": 1.0,
+    "rec_yd": 0.1,
+    "rec_td": 6,
+    "fumble_lost": -2,
+    "two_pt": 2
+  },
+  "roster_size": 16,
+  "starting_lineup": {
+    "QB": 1,
+    "RB": 2,
+    "WR": 2,
+    "TE": 1,
+    "FLEX": 1,
+    "SUPERFLEX": 0,
+    "K": 1,
+    "DEF": 1
+  },
+  "bench_slots": 7,
+  "ir_slots": 1,
+  "draft_type": "snake",
+  "seconds_per_pick": 90,
+  "my_draft_slot": 5,
+  "draft_date": null,
+  "risk_aversion": 0.4,
+  "min_rb": 5,
+  "min_wr": 6
+}
