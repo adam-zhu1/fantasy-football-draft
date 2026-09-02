@@ -31,8 +31,8 @@
   "ir_slots": 1,
   "draft_type": "snake",
   "seconds_per_pick": 90,
-  "my_draft_slot": 5,
-  "draft_date": null,
+  "my_draft_slot": 12,
+  "draft_date": "2026-09-05",
   "risk_aversion": 0.4,
   "min_rb": 5,
   "min_wr": 6
