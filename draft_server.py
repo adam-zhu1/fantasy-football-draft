@@ -147,8 +147,8 @@ def build_recs(avail, mine, next_pick, my_picks_left, sim=None):
     rows = []
     by_pos = {pos: g.sort_values("vbd", ascending=False) for pos, g in avail.groupby("pos")}
     # only the top of the board can be a sensible pick; K/DST kept so the last rounds still work
-    top = pd.concat([avail.sort_values("vbd", ascending=False).head(110),
-                     by_pos.get("K", avail.iloc[0:0]).head(14), by_pos.get("DST", avail.iloc[0:0]).head(14)]).drop_duplicates("key")
+    per_pos = {"QB": 16, "RB": 45, "WR": 50, "TE": 16, "K": 14, "DST": 14}
+    top = pd.concat([g.head(per_pos.get(pos, 20)) for pos, g in by_pos.items()])
     for key, r in top.iterrows():
         pos = r["pos"]
         elig, why_not = eligibility(pos, counts, my_picks_left, next_round)
