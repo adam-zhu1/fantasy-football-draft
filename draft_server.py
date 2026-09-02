@@ -11,10 +11,12 @@ from rapidfuzz import fuzz, process
 
 from ffdraft.config import ROOT, DATA, load_settings
 from ffdraft.names import norm_name
+from ffdraft.opponents import simulate
 
 app = Flask(__name__, template_folder=str(ROOT / "templates"))
 STATE_FILE = DATA / "draft_state.json"
-ADP_SD = 8.0  # how noisy other managers are around ADP, in picks
+ADP_SD = 8.0  # fallback noise around ADP when no slot is set
+VONA_WEIGHT = 0.5  # how much "value lost by waiting" moves the score
 
 S = load_settings()
 T = S["num_teams"]
@@ -41,7 +43,7 @@ NICKS = {"cmc": "christianmccaffrey", "jsn": "jaxonsmithnjigba", "arsb": "amonra
 def load_state():
     if STATE_FILE.exists():
         return json.loads(STATE_FILE.read_text())
-    return {"my_slot": S.get("my_draft_slot"), "picks": []}
+    return {"my_slot": S.get("my_draft_slot"), "picks": [], "bots": []}
 
 
 def save_state(st):
@@ -49,6 +51,7 @@ def save_state(st):
 
 
 STATE = load_state()
+STATE.setdefault("bots", [])
 
 
 # ---------------------------------------------------------------- draft math
@@ -130,7 +133,8 @@ def need_bonus(pos, counts, next_round):
     return 0, ""
 
 
-def build_recs(avail, mine, next_pick, my_picks_left):
+def build_recs(avail, mine, next_pick, my_picks_left, sim=None):
+    sim = sim or {}
     counts = roster_counts(mine)
     _, next_round = slot_for_pick(min(next_pick, T * ROUNDS))
     my_teams = {r["team"] for r in mine if r["pos"] in ("QB", "RB", "WR", "TE") and r["team"]}
@@ -141,7 +145,11 @@ def build_recs(avail, mine, next_pick, my_picks_left):
         the_pick_after = later[0] if later else None
 
     rows = []
-    for key, r in avail.iterrows():
+    by_pos = {pos: g.sort_values("vbd", ascending=False) for pos, g in avail.groupby("pos")}
+    # only the top of the board can be a sensible pick; K/DST kept so the last rounds still work
+    top = pd.concat([avail.sort_values("vbd", ascending=False).head(110),
+                     by_pos.get("K", avail.iloc[0:0]).head(14), by_pos.get("DST", avail.iloc[0:0]).head(14)]).drop_duplicates("key")
+    for key, r in top.iterrows():
         pos = r["pos"]
         elig, why_not = eligibility(pos, counts, my_picks_left, next_round)
         bonus, bonus_txt = need_bonus(pos, counts, next_round)
@@ -152,10 +160,18 @@ def build_recs(avail, mine, next_pick, my_picks_left):
         bye_pen = 8.0 * (n_bye - 2) ** 2 if n_bye >= 3 else 0.0
         score = vbd + bonus - st_pen - bye_pen
         adp = None if pd.isna(r["adp_avg"]) else float(r["adp_avg"])
-        p_now = p_available(adp, next_pick)          # chance he's there at my upcoming pick (if not my turn now)
-        p_next = p_available(adp, the_pick_after) if the_pick_after else 0.0
+        if sim.get("surv_now") is not None:
+            p_now = sim["surv_now"].get(key, 1.0)
+            p_next = sim["surv_next"].get(key, 1.0) if sim.get("surv_next") is not None else 0.0
+        else:
+            p_now = p_available(adp, next_pick)
+            p_next = p_available(adp, the_pick_after) if the_pick_after else 0.0
+        exp_best = (sim.get("exp_best_next") or {}).get(pos)
+        decay = max(0.0, vbd - exp_best) if exp_best is not None and not (isinstance(exp_best, float) and math.isnan(exp_best)) else 0.0
+        if elig:
+            score += VONA_WEIGHT * decay
         # same-position tier context
-        same_pos = avail[avail["pos"] == pos]
+        same_pos = by_pos[pos]
         tier_left = int((same_pos["pos_tier"] == r["pos_tier"]).sum())
         nxt = same_pos[same_pos["vbd"] < vbd].head(1)
         gap_next = float(vbd - nxt["vbd"].iloc[0]) if len(nxt) else 0.0
@@ -165,12 +181,21 @@ def build_recs(avail, mine, next_pick, my_picks_left):
 
         why = []
         why.append(f"{POS_LABEL[pos].title()} #{int(r['pos_rank'])} on the board, tier {int(r['pos_tier'])}. {tier_left} player{'s' if tier_left != 1 else ''} left in this tier.")
-        if gap_tier > 0:
+        if gap_tier >= 8:
             why.append(f"The next {pos} tier starts {gap_tier:.0f} points lower. That's a real drop-off.")
+        elif gap_tier > 0 and next_name:
+            why.append(f"Next {pos} tier starts only {gap_tier:.0f} points lower ({next_name}), so similar value is still available.")
         elif next_name:
             why.append(f"Next {pos} after him is {next_name}, {gap_next:.0f} points lower. Near-equivalent, so no need to panic.")
-        if adp is not None and the_pick_after:
+        if the_pick_after and sim.get("surv_next") is not None:
+            why.append(f"Simulating the {sim['n_between_next']} picks before your following pick (#{the_pick_after}) using each team's roster: about {p_next*100:.0f}% chance he's still there. " + ("Take him now if you want him." if p_next < 0.5 else "You could probably wait a round."))
+        elif adp is not None and the_pick_after:
             why.append(f"Drafts usually take him around pick {adp:.0f}. Your following pick is #{the_pick_after}: about {p_next*100:.0f}% chance he'd still be there. " + ("Take him now if you want him." if p_next < 0.5 else "You could probably wait a round."))
+        if exp_best is not None and not math.isnan(exp_best) and the_pick_after:
+            if decay > 0:
+                why.append(f"If you pass, the best {pos} expected at your next turn is worth about {exp_best:.0f}. Taking him now gains {decay:.0f} at the position.")
+            else:
+                why.append(f"A {pos} of about the same value ({exp_best:.0f}) should still be there at your next turn, so there's no rush at this position.")
         if bonus_txt: why.append(bonus_txt)
         why.append(f"Durability: expected {r['exp_games']:.1f} of 17 games based on the last 3 seasons ({'rookie / no history, positional average' if pd.isna(r['hist_seasons']) else f'{int(r['hist_games'])} games in {int(r['hist_seasons'])} seasons'}). Weekly swing about ±{r['weekly_sd']:.0f} points.")
         if bool(r["committee"]): why.append("Shares the backfield with another projected 110+ carry back, so his value is docked 10%.")
@@ -184,7 +209,7 @@ def build_recs(avail, mine, next_pick, my_picks_left):
             "pos_rank": int(r["pos_rank"]), "tier": int(r["pos_tier"]), "rank": int(r["rank"]),
             "proj": round(float(r["proj_pts"]), 1), "vbd": round(vbd, 1), "score": round(score, 1),
             "adp": adp, "p_now": round(p_now, 2), "p_next": round(p_next, 2),
-            "eligible": elig, "why": why, "flags": {"committee": bool(r["committee"]), "td": bool(r["td_dep"]), "same_team": same_team, "bye_stack": bye_pen > 0},
+            "eligible": elig, "why": why, "decay": round(decay, 1), "flags": {"committee": bool(r["committee"]), "td": bool(r["td_dep"]), "same_team": same_team, "bye_stack": bye_pen > 0},
         })
     rows.sort(key=lambda x: (not x["eligible"], -x["score"]))
     return rows
@@ -208,7 +233,49 @@ def build_state():
     my_next = upcoming[0] if upcoming else None
     my_picks_left = len(upcoming) if slot else max(1, ROUNDS - len(mine))
     avail = available()
-    recs = build_recs(avail, mine, my_next or next_pick, my_picks_left)
+    bots = set(STATE.get("bots", []))
+    rosters = {sl: {} for sl in range(1, T + 1)}
+    for p in picks:
+        rosters.setdefault(p["slot"], {})[p["pos"]] = rosters.setdefault(p["slot"], {}).get(p["pos"], 0) + 1
+    sim = {}
+    if slot and not done and my_next:
+        later = [p for p in my_nums if p > my_next]
+        pick_after = later[0] if later else None
+        between_now = [(p, slot_for_pick(p)[0]) for p in range(next_pick, my_next)]
+        between_next = between_now + ([(p, slot_for_pick(p)[0]) for p in range(my_next + 1, pick_after)] if pick_after else [])
+        surv_now, _, _ = simulate(avail, between_now, rosters, bots, LINEUP, seed=next_pick)
+        if pick_after:
+            surv_next, exp_best, _ = simulate(avail, between_next, rosters, bots, LINEUP, seed=next_pick + 1)
+        else:
+            surv_next, exp_best = None, {}
+        sim = {"surv_now": surv_now, "surv_next": surv_next, "exp_best_next": exp_best,
+               "n_between_now": len(between_now), "n_between_next": len(between_next), "pick_after": pick_after}
+    recs = build_recs(avail, mine, my_next or next_pick, my_picks_left, sim)
+    # opponents summary
+    before_me = {sl for _, sl in (sim.get("n_between_now") and [(p, slot_for_pick(p)[0]) for p in range(next_pick, my_next)] or [])}
+    opponents = []
+    for sl in range(1, T + 1):
+        c = rosters.get(sl, {})
+        rb, wr = c.get("RB", 0), c.get("WR", 0)
+        if sl in bots: need = "ESPN rank"
+        elif rb < LINEUP["RB"] and wr < LINEUP["WR"]: need = "RB or WR"
+        elif rb < LINEUP["RB"]: need = "RB"
+        elif wr < LINEUP["WR"]: need = "WR"
+        elif c.get("QB", 0) == 0 and rnd >= 7: need = "QB"
+        elif c.get("TE", 0) == 0 and rnd >= 7: need = "TE"
+        elif rnd >= 15 and (c.get("K", 0) == 0 or c.get("DST", 0) == 0): need = "K/DST"
+        else: need = "depth"
+        opponents.append({"slot": sl, "is_bot": sl in bots, "is_me": sl == slot, "counts": {p: c.get(p, 0) for p in MAX_POS},
+                          "n": sum(c.values()), "picks_before_me": sl in before_me, "need": need,
+                          "players": [p["player"] for p in picks if p["slot"] == sl]})
+    # cost-of-waiting table
+    vona = []
+    if sim.get("exp_best_next"):
+        for pos in ["RB", "WR", "QB", "TE"]:
+            now = avail[avail["pos"] == pos]["vbd"].max()
+            nxt = sim["exp_best_next"].get(pos)
+            if nxt is not None and not math.isnan(nxt):
+                vona.append({"pos": pos, "best_now": round(float(now), 1), "best_next": round(float(nxt), 1), "cost": round(float(now - nxt), 1)})
     counts = roster_counts(mine)
     needs = [
         {"pos": "QB", "have": counts["QB"], "need": LINEUP["QB"], "label": "Quarterback"},
@@ -224,7 +291,8 @@ def build_state():
         "my_turn": (slot is not None and on_clock == slot and not done),
         "my_next_pick": my_next, "picks_until_mine": (my_next - next_pick) if my_next else None,
         "my_pick_numbers": my_nums, "my_picks_left": my_picks_left,
-        "roster": mine, "needs": needs,
+        "roster": mine, "needs": needs, "bots": sorted(bots), "opponents": opponents, "vona": vona,
+        "sim_note": (f"Simulated {sim['n_between_next']} picks to your following pick #{sim['pick_after']}" if sim.get("pick_after") else ""),
         "recs": recs[:60],
         "log": list(reversed(picks))[:40],
         "n_available": int(len(avail)),
@@ -321,6 +389,25 @@ def api_slot():
         s = json.loads(sp.read_text()); s["my_draft_slot"] = STATE["my_slot"]; sp.write_text(json.dumps(s, indent=2))
     except Exception:
         pass
+    return jsonify(build_state())
+
+
+@app.post("/api/bots")
+def api_bots():
+    slots = request.get_json(force=True).get("slots", [])
+    STATE["bots"] = sorted({int(x) for x in slots if 1 <= int(x) <= T})
+    save_state(STATE)
+    return jsonify(build_state())
+
+
+@app.post("/api/set_pick_slot")
+def api_set_pick_slot():
+    body = request.get_json(force=True)
+    for p in STATE["picks"]:
+        if p["key"] == body.get("key"):
+            p["slot"] = int(body["slot"])
+            p["mine"] = (STATE["my_slot"] is not None and p["slot"] == STATE["my_slot"])
+    save_state(STATE)
     return jsonify(build_state())
 
 
