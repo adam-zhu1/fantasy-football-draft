@@ -35,3 +35,11 @@
 State is saved to `data/draft_state.json` after every pick; restarting loses nothing. "Reset draft" clears it.
 
 Morning of the draft: re-export the FantasyPros files into `data/`, then double-click **Rebuild Rankings.command**.
+
+## Opponent modeling
+Every pick is attributed to a team from the snake order, so the tool knows each opponent's roster.
+Before each of your turns it simulates the picks in between (400 runs): bot teams take the best
+remaining player by ESPN rank; human teams draw from an ADP-centred distribution weighted by what
+their roster still needs. That gives each player's chance of surviving to your pick, and the
+expected best player left at each position (cost of waiting), which feeds the recommendation.
+Tick "bot" on any slot with no manager. Fix a mis-attributed pick with the team dropdown in the log.

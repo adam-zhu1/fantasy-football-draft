@@ -72,6 +72,16 @@
   .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#262b36; border:1px solid var(--line); padding:10px 16px; border-radius:8px; display:none; z-index:30; }
   .pct { font-variant-numeric: tabular-nums; }
   .setup { text-align:center; padding:40px 20px; }
+  .opp { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:8px; }
+  .opp .card { border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; background:#12161d; }
+  .opp .card.soon { border-color:var(--warn); }
+  .opp .card.me { border-color:var(--me); }
+  .opp .card .t { display:flex; justify-content:space-between; font-weight:700; margin-bottom:4px; }
+  .opp .card .cnt { color:var(--muted); font-variant-numeric:tabular-nums; }
+  .opp .card .need { color:var(--warn); }
+  .opp label { color:var(--muted); font-weight:400; font-size:12px; }
+  .vona td, .vona th { padding:4px 6px; }
+  .log select { background:#262b36; color:var(--text); border:1px solid var(--line); border-radius:5px; font-size:12px; padding:1px 3px; }
   .setup h1 { font-size:28px; }
 </style>
 </head>
@@ -111,7 +121,7 @@
       <div class="tabs" id="tabs"></div>
       <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Tier</th><th>Bye</th><th>Value</th><th>Fit</th><th title="Chance he's still available at your following pick">Lasts?</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Tier</th><th>Bye</th><th>Value</th><th>Fit</th><th id="lasts-h" title="Chance he's still available when you pick">Lasts?</th><th></th></tr></thead>
         <tbody id="board"></tbody>
       </table>
       </div>
@@ -128,8 +138,13 @@
       <div id="needs"></div>
       <div class="roster" id="roster" style="margin-top:10px"></div>
     </div>
+    <div class="panel">
+      <h2>Other teams <span style="text-transform:none;color:var(--muted)">(who picks before you is outlined orange)</span></h2>
+      <p class="hint">Filled in automatically from pick order. Tick <b>bot</b> for teams with no manager: ESPN autodrafts for them straight down its own rankings, which makes them predictable. Numbers are QB·RB·WR·TE·K·DST.</p>
+      <div class="opp" id="opp"></div>
+    </div>
     <div class="panel log">
-      <h2>Draft log <span style="text-transform:none;color:var(--muted)">(click a pick to flip mine/theirs)</span></h2>
+      <h2>Draft log <span style="text-transform:none;color:var(--muted)">(fix the team dropdown if a pick got attributed wrong)</span></h2>
       <div id="log"></div>
     </div>
   </aside>
@@ -141,7 +156,8 @@
     <li>Set your <b>slot</b> (top right) once ESPN shows the draft order.</li>
     <li>Keep ESPN's draft room open next to this window. Each time <i>anyone</i> picks, type the name in box 1 and press <kbd>Enter</kbd>. If it was your pick, press <kbd>Shift</kbd>+<kbd>Enter</kbd> instead (or click the blue button).</li>
     <li>When the banner says <b>YOUR PICK</b>, look at the Recommendation. Take that player in ESPN, then mark him as yours here.</li>
-    <li>Wrong click? <kbd>Cmd</kbd>+<kbd>Z</kbd> or the Undo button removes the last pick. Clicking a pick in the log flips it between mine and theirs.</li>
+    <li>Wrong click? <kbd>Cmd</kbd>+<kbd>Z</kbd> or the Undo button removes the last pick. If a pick was credited to the wrong team, change the team dropdown next to it in the log.</li>
+    <li>In <b>Other teams</b>, tick <b>bot</b> for any slot with no human manager. Bots autodraft down ESPN's rankings, so the tool predicts them almost exactly.</li>
     <li>The draft is saved to <code>data/draft_state.json</code> after every pick. If the page or server dies, restart it and everything is still here.</li>
   </ol>
   <h3>The rules the board enforces (from your plan)</h3>
@@ -157,7 +173,8 @@
     <li><b>ADP</b> (average draft position): the pick number where a player usually gets taken in other people's drafts. Used to guess whether he'll still be there at your next turn.</li>
     <li><b>Value</b> (VBD, value over replacement): projected points minus the points of the last starter-quality player at that position, after discounting for missed games and weekly volatility. It's what makes a RB and a QB comparable.</li>
     <li><b>Fit</b>: Value plus bonuses/penalties for what your roster needs (open starting slot, too many from one NFL team, bye-week pile-up).</li>
-    <li><b>Lasts?</b>: chance the player is still available at your following pick. Under 50% means "now or never".</li>
+    <li><b>Lasts?</b>: chance the player is still available when your turn comes, from simulating every pick in between using each team's roster needs (and ESPN rank for bots). Under 50% means "now or never".</li>
+    <li><b>Cost of waiting</b>: how much value you lose at a position by not taking its best player now, compared with the best one expected to be left at your next turn. Big number = take that position now.</li>
     <li><b>Tier</b>: a group of players with similar value. The dashed lines on the board.</li>
     <li><b>Bye</b>: the week that player's NFL team doesn't play. He scores 0 that week. Avoid piling 4+ starters on the same bye.</li>
     <li><b>FLEX</b>: a starting slot that can hold a RB, WR, or TE.</li>
@@ -195,6 +212,7 @@ function render() {
   else if (s.my_turn) { t.textContent = '🟢 YOUR PICK'; t.className = 'turn me'; }
   else { t.textContent = `Waiting · ${s.picks_until_mine} pick${s.picks_until_mine === 1 ? '' : 's'} until you`; t.className = 'turn'; }
   $('#setup').style.display = s.my_slot == null ? 'block' : 'none';
+  $('#lasts-h').textContent = s.my_turn ? 'Lasts to next turn?' : 'Lasts to your pick?';
 
   // slot dropdown
   const sel = $('#slot');
@@ -216,7 +234,7 @@ function render() {
     html += `<tr class="clickable ${tb} ${r.eligible ? '' : 'inelig'}" data-key="${r.key}">
       <td>${r.rank}</td><td><b>${r.player}</b> <span class="meta">${r.team}</span>${flagStr(r)}</td><td>${posTag(r.pos)} <span class="tier">${r.pos_rank}</span></td>
       <td>T${r.tier}</td><td>${r.bye || ''}</td><td>${r.vbd.toFixed(0)}</td><td><b>${r.score.toFixed(0)}</b></td>
-      <td>${s.my_slot ? pct(r.p_next) : '–'}</td>
+      <td>${s.my_slot ? pct(s.my_turn ? r.p_next : r.p_now) : '–'}</td>
       <td class="actions"><button data-act="other" data-key="${r.key}">Someone else</button><button class="me" data-act="mine" data-key="${r.key}">Me</button></td></tr>`;
     if (OPEN === r.key) html += `<tr><td colspan="9"><div class="why"><ul>${r.why.map(w => `<li>${w}</li>`).join('')}</ul></div></td></tr>`;
   });
@@ -232,11 +250,16 @@ function render() {
   top.forEach((r, i) => {
     rh += `<div class="rec ${i === 0 ? 'top' : ''}">
       <div class="big">${i === 0 ? '→ ' : `${i + 1}. `}${r.player} ${posTag(r.pos)}</div>
-      <div class="sub">${r.team} · ${r.pos}${r.pos_rank} · tier ${r.tier} · bye ${r.bye || '?'} · value ${r.vbd.toFixed(0)} · fit ${r.score.toFixed(0)}${s.my_slot ? ` · lasts to your next pick: ${Math.round(r.p_next*100)}%` : ''}</div>
+      <div class="sub">${r.team} · ${r.pos}${r.pos_rank} · tier ${r.tier} · bye ${r.bye || '?'} · value ${r.vbd.toFixed(0)} · fit ${r.score.toFixed(0)}${s.my_slot ? ` · still there at your following pick: ${Math.round(r.p_next*100)}%` : ''}</div>
       ${i === 0 || OPEN === 'rec' + i ? `<ul>${r.why.map(w => `<li>${w}</li>`).join('')}</ul>` : `<a href="#" class="hint" data-open="rec${i}">show reasoning</a>`}
       <div class="actions"><button class="me" data-act="mine" data-key="${r.key}">✔ I drafted him</button><button data-act="other" data-key="${r.key}">Someone else took him</button></div>
     </div>`;
   });
+  if (s.vona && s.vona.length) {
+    rh += `<p class="hint" style="margin-top:10px">${s.sim_note}. <b>Cost of waiting</b> at each position (best now vs. expected best at your next turn):</p>
+      <table class="vona"><thead><tr><th>Pos</th><th>Best now</th><th>Expected next turn</th><th>You lose</th></tr></thead><tbody>` +
+      s.vona.map(v => `<tr><td>${posTag(v.pos)}</td><td>${v.best_now.toFixed(0)}</td><td>${v.best_next.toFixed(0)}</td><td class="${v.cost >= 15 ? 'todo' : ''}"><b>${v.cost.toFixed(0)}</b></td></tr>`).join('') + '</tbody></table>';
+  }
   if (top.length >= 2 && top[0].tier === top[1].tier && top[0].pos === top[1].pos) rh += `<p class="hint">${top[0].player} and ${top[1].player} are in the same tier: near-equivalent. Either is fine.</p>`;
   $('#recs').innerHTML = rh;
   $('#recs').querySelectorAll('button[data-act]').forEach(b => b.onclick = () => pick(b.dataset.key, b.dataset.act === 'mine'));
@@ -256,9 +279,22 @@ function render() {
   const heavy = Object.entries(byes).filter(([b, c]) => c >= 3);
   if (heavy.length) $('#roster').innerHTML += `<p class="hint todo">⚠ Bye pile-up: ${heavy.map(([b,c]) => `${c} players on week ${b}`).join(', ')}.</p>`;
 
+  // opponents
+  $('#opp').innerHTML = (s.opponents || []).map(o => `<div class="card ${o.picks_before_me ? 'soon' : ''} ${o.is_me ? 'me' : ''}">
+      <div class="t"><span>Team ${o.slot}${o.is_me ? ' (you)' : ''}</span><label><input type="checkbox" data-bot="${o.slot}" ${o.is_bot ? 'checked' : ''}> bot</label></div>
+      <div class="cnt">${['QB','RB','WR','TE','K','DST'].map(p => o.counts[p]).join('·')} <span style="float:right">${o.n} picks</span></div>
+      <div class="need">${o.is_me ? '' : 'likely wants: ' + o.need}</div>
+      <div class="meta" style="font-size:11px;color:var(--muted)">${o.players.slice(-3).join(', ')}</div>
+    </div>`).join('');
+  $('#opp').querySelectorAll('input[data-bot]').forEach(cb => cb.onchange = async () => {
+    const slots = [...$('#opp').querySelectorAll('input[data-bot]:checked')].map(x => +x.dataset.bot);
+    STATE = await api('/api/bots', {slots}); render();
+  });
+
   // log
-  $('#log').innerHTML = s.log.map(p => `<div class="item ${p.mine ? 'mine' : ''}" data-key="${p.key}" title="click to flip mine/theirs"><span class="n">#${p.pick_no}</span>${posTag(p.pos)}<b>${p.player}</b><span class="meta">${p.team} · R${p.round} · team ${p.slot}${p.mine ? ' · YOU' : ''}</span></div>`).join('') || '<p class="hint">No picks yet.</p>';
-  $('#log').querySelectorAll('.item').forEach(el => el.onclick = async () => { STATE = await api('/api/toggle_mine', {key: el.dataset.key}); render(); });
+  const slotSel = (p) => `<select data-slotof="${p.key}" title="which team took him">${Array.from({length: s.league.teams}, (_, i) => i + 1).map(i => `<option value="${i}" ${i === p.slot ? 'selected' : ''}>team ${i}</option>`).join('')}</select>`;
+  $('#log').innerHTML = s.log.map(p => `<div class="item ${p.mine ? 'mine' : ''}" data-key="${p.key}"><span class="n">#${p.pick_no}</span>${posTag(p.pos)}<b>${p.player}</b><span class="meta">${p.team} · R${p.round}</span>${slotSel(p)}${p.mine ? '<span class="meta">YOU</span>' : ''}</div>`).join('') || '<p class="hint">No picks yet.</p>';
+  $('#log').querySelectorAll('select[data-slotof]').forEach(el => el.onchange = async () => { STATE = await api('/api/set_pick_slot', {key: el.dataset.slotof, slot: +el.value}); render(); });
 }
 function flagStr(r) {
   const f = [];
