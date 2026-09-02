@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Draft Board — RIP EVAN LU</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --text:#e8eaf0; --muted:#9aa3b2; --accent:#4fd1c5; --good:#48bb78; --warn:#f6ad55; --bad:#fc8181; --me:#63b3ed;
+          --RB:#f6ad55; --WR:#63b3ed; --QB:#fc8181; --TE:#b794f4; --K:#9aa3b2; --DST:#9aa3b2; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  header { display:flex; align-items:center; gap:18px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header .stat { display:flex; flex-direction:column; }
+  header .stat b { font-size:20px; }
+  header .stat span { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .turn { padding:8px 14px; border-radius:8px; font-weight:700; font-size:18px; background:#2a2f3a; }
+  .turn.me { background:var(--good); color:#0b1d12; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
+  .spacer { flex:1; }
+  button { background:#262b36; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 12px; cursor:pointer; font-size:14px; }
+  button:hover { background:#303646; }
+  button.primary { background:var(--accent); color:#06231f; border-color:transparent; font-weight:700; }
+  button.me { background:var(--me); color:#06192a; border-color:transparent; font-weight:700; }
+  button.danger { border-color:var(--bad); color:var(--bad); }
+  select { background:#262b36; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px; font-size:14px; }
+  main { display:grid; grid-template-columns: 1.35fr 1fr; gap:16px; padding:16px 18px; }
+  @media (max-width: 1100px) { main { grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:16px; }
+  .panel h2 { margin:0 0 8px; font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .hint { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  #q { width:100%; font-size:22px; padding:12px 14px; border-radius:10px; border:2px solid var(--line); background:#0f1115; color:var(--text); }
+  #q:focus { outline:none; border-color:var(--accent); }
+  .results { margin-top:8px; }
+  .row { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; border:1px solid transparent; }
+  .row.sel { border-color:var(--accent); background:#1d2430; }
+  .row .name { font-weight:700; font-size:17px; flex:1; }
+  .row .meta { color:var(--muted); font-size:13px; }
+  .pos { display:inline-block; min-width:34px; text-align:center; font-weight:800; font-size:12px; padding:2px 6px; border-radius:5px; color:#0f1115; }
+  .pos.RB{background:var(--RB)} .pos.WR{background:var(--WR)} .pos.QB{background:var(--QB)} .pos.TE{background:var(--TE)} .pos.K,.pos.DST{background:var(--K)}
+  .tier { font-size:12px; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; padding:6px 6px; border-bottom:1px solid var(--line); }
+  td { padding:7px 6px; border-bottom:1px solid #20242d; vertical-align:middle; }
+  tr.tierbreak td { border-top:2px dashed #3b4252; }
+  tr.inelig { opacity:.45; }
+  tr.clickable { cursor:pointer; }
+  tr.clickable:hover { background:#1d2430; }
+  .why { background:#11151c; border-left:3px solid var(--accent); padding:8px 12px; margin:4px 0 8px; border-radius:6px; font-size:14px; }
+  .why li { margin:3px 0; }
+  .rec { border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; background:#12161d; }
+  .rec.top { border-color:var(--accent); }
+  .rec .big { font-size:24px; font-weight:800; }
+  .rec .sub { color:var(--muted); margin:2px 0 8px; }
+  .rec ul { margin:6px 0 8px 18px; padding:0; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .need { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #20242d; }
+  .need .bar { color:var(--muted); font-size:13px; }
+  .ok { color:var(--good); } .todo { color:var(--warn); }
+  .roster .slot { display:flex; gap:8px; padding:4px 0; align-items:center; }
+  .roster .slot .lbl { width:52px; color:var(--muted); font-size:12px; }
+  .roster .empty { color:#555c6b; font-style:italic; }
+  .log .item { display:flex; gap:8px; padding:4px 0; font-size:14px; border-bottom:1px solid #20242d; align-items:center; }
+  .log .item .n { color:var(--muted); width:44px; }
+  .log .item.mine { color:var(--me); }
+  .tabs { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  .tabs button.on { background:var(--accent); color:#06231f; font-weight:700; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index:20; }
+  .modal.open { display:flex; }
+  .modal .box { background:var(--panel); border:1px solid var(--line); border-radius:12px; max-width:760px; width:92%; max-height:88vh; overflow:auto; padding:22px 26px; }
+  .modal h3 { margin-top:18px; }
+  kbd { background:#262b36; border:1px solid var(--line); border-radius:4px; padding:1px 6px; font-size:12px; }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#262b36; border:1px solid var(--line); padding:10px 16px; border-radius:8px; display:none; z-index:30; }
+  .pct { font-variant-numeric: tabular-nums; }
+  .setup { text-align:center; padding:40px 20px; }
+  .setup h1 { font-size:28px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="stat"><b id="h-pick">–</b><span>next pick</span></div>
+  <div class="stat"><b id="h-round">–</b><span>round</span></div>
+  <div class="stat"><b id="h-clock">–</b><span>on the clock</span></div>
+  <div class="stat"><b id="h-mynext">–</b><span>your next pick</span></div>
+  <div class="turn" id="turn">Loading…</div>
+  <div class="spacer"></div>
+  <label style="color:var(--muted);font-size:13px">My slot
+    <select id="slot"><option value="">?</option></select>
+  </label>
+  <button id="undo" title="Cmd/Ctrl+Z">↶ Undo last pick</button>
+  <button id="help">? How to use</button>
+  <button id="reset" class="danger">Reset draft</button>
+</header>
+
+<div id="setup" class="setup" style="display:none">
+  <h1>First: what's your draft slot?</h1>
+  <p class="hint">ESPN shows the order about an hour before the draft. Pick your slot number in the top-right dropdown. You can still use the board without it, but the "will he last until my next pick" math needs it.</p>
+</div>
+
+<main>
+  <section>
+    <div class="panel">
+      <h2>1 · Mark a pick (any team's)</h2>
+      <p class="hint">Every time anyone drafts a player, type a few letters of his name, then press <kbd>Enter</kbd> = someone else took him, or <kbd>Shift</kbd>+<kbd>Enter</kbd> = I took him. Misspellings are fine.</p>
+      <input id="q" placeholder="Type a name… e.g. 'gibbs' or 'jsn'" autocomplete="off" autofocus>
+      <div class="results" id="results"></div>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Best available for <em>your</em> roster</h2>
+      <p class="hint">Ranked by value over replacement, adjusted for what your roster needs. Dashed line = tier break; never skip across one for a name you like. Click a row to see the reasoning. Greyed rows aren't allowed yet (rules in the ? menu).</p>
+      <div class="tabs" id="tabs"></div>
+      <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Tier</th><th>Bye</th><th>Value</th><th>Fit</th><th title="Chance he's still available at your following pick">Lasts?</th><th></th></tr></thead>
+        <tbody id="board"></tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="panel" id="recpanel">
+      <h2>Recommendation</h2>
+      <div id="recs"></div>
+    </div>
+    <div class="panel">
+      <h2>Your roster <span id="rostercount" style="text-transform:none;color:var(--muted)"></span></h2>
+      <div id="needs"></div>
+      <div class="roster" id="roster" style="margin-top:10px"></div>
+    </div>
+    <div class="panel log">
+      <h2>Draft log <span style="text-transform:none;color:var(--muted)">(click a pick to flip mine/theirs)</span></h2>
+      <div id="log"></div>
+    </div>
+  </aside>
+</main>
+
+<div class="modal" id="modal"><div class="box">
+  <h2>How to use this on draft day</h2>
+  <ol>
+    <li>Set your <b>slot</b> (top right) once ESPN shows the draft order.</li>
+    <li>Keep ESPN's draft room open next to this window. Each time <i>anyone</i> picks, type the name in box 1 and press <kbd>Enter</kbd>. If it was your pick, press <kbd>Shift</kbd>+<kbd>Enter</kbd> instead (or click the blue button).</li>
+    <li>When the banner says <b>YOUR PICK</b>, look at the Recommendation. Take that player in ESPN, then mark him as yours here.</li>
+    <li>Wrong click? <kbd>Cmd</kbd>+<kbd>Z</kbd> or the Undo button removes the last pick. Clicking a pick in the log flips it between mine and theirs.</li>
+    <li>The draft is saved to <code>data/draft_state.json</code> after every pick. If the page or server dies, restart it and everything is still here.</li>
+  </ol>
+  <h3>The rules the board enforces (from your plan)</h3>
+  <ul>
+    <li><b>Kicker and defense only in the last two rounds.</b> They score about the same as each other; drafting one early wastes a pick that could be injury insurance.</li>
+    <li><b>Exactly one QB and one TE.</b> You only start one of each, and the bench versions score zero for you.</li>
+    <li><b>Everything else is RB or WR, until you have at least 5 RB and 6 WR.</b> Those are the positions that get hurt. Depth means an injury costs you a downgrade instead of an empty slot.</li>
+    <li><b>Never reach across a tier break.</b> Players inside a tier are near-equal; the drop between tiers is real.</li>
+  </ul>
+  <h3>Glossary</h3>
+  <ul>
+    <li><b>PPR</b>: your league gives 1 point per catch, on top of yards and touchdowns.</li>
+    <li><b>ADP</b> (average draft position): the pick number where a player usually gets taken in other people's drafts. Used to guess whether he'll still be there at your next turn.</li>
+    <li><b>Value</b> (VBD, value over replacement): projected points minus the points of the last starter-quality player at that position, after discounting for missed games and weekly volatility. It's what makes a RB and a QB comparable.</li>
+    <li><b>Fit</b>: Value plus bonuses/penalties for what your roster needs (open starting slot, too many from one NFL team, bye-week pile-up).</li>
+    <li><b>Lasts?</b>: chance the player is still available at your following pick. Under 50% means "now or never".</li>
+    <li><b>Tier</b>: a group of players with similar value. The dashed lines on the board.</li>
+    <li><b>Bye</b>: the week that player's NFL team doesn't play. He scores 0 that week. Avoid piling 4+ starters on the same bye.</li>
+    <li><b>FLEX</b>: a starting slot that can hold a RB, WR, or TE.</li>
+    <li><b>Snake draft</b>: pick order reverses each round (1→12, 12→1, …).</li>
+  </ul>
+  <p style="text-align:right"><button id="closehelp" class="primary">Got it</button></p>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let STATE = null, RESULTS = [], SEL = 0, POSFILTER = 'ALL', OPEN = null, TIMER = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)} : {});
+  const j = await r.json();
+  if (j.error) { toast(j.error); return null; }
+  return j;
+}
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._t); t._t = setTimeout(() => t.style.display = 'none', 2500); }
+const pct = p => `<span class="pct">${Math.round(p*100)}%</span>`;
+const posTag = p => `<span class="pos ${p}">${p}</span>`;
+
+async function refresh() { STATE = await api('/api/state'); render(); }
+
+function render() {
+  const s = STATE; if (!s) return;
+  $('#h-pick').textContent = s.done ? 'done' : `#${s.next_pick}`;
+  $('#h-round').textContent = `${s.round} / ${s.league.rounds}`;
+  $('#h-clock').textContent = s.done ? '–' : `Team ${s.on_clock}` + (s.on_clock === s.my_slot ? ' (you)' : '');
+  $('#h-mynext').textContent = s.my_next_pick ? `#${s.my_next_pick}` + (s.picks_until_mine ? ` (in ${s.picks_until_mine})` : '') : '—';
+  const t = $('#turn');
+  if (s.done) { t.textContent = 'Draft complete'; t.className = 'turn'; }
+  else if (s.my_slot == null) { t.textContent = 'Set your slot →'; t.className = 'turn'; }
+  else if (s.my_turn) { t.textContent = '🟢 YOUR PICK'; t.className = 'turn me'; }
+  else { t.textContent = `Waiting · ${s.picks_until_mine} pick${s.picks_until_mine === 1 ? '' : 's'} until you`; t.className = 'turn'; }
+  $('#setup').style.display = s.my_slot == null ? 'block' : 'none';
+
+  // slot dropdown
+  const sel = $('#slot');
+  if (sel.options.length <= 1) for (let i = 1; i <= s.league.teams; i++) { const o = document.createElement('option'); o.value = i; o.textContent = i; sel.appendChild(o); }
+  sel.value = s.my_slot ?? '';
+
+  // tabs
+  const tabs = ['ALL','RB','WR','QB','TE','K','DST'];
+  $('#tabs').innerHTML = tabs.map(p => `<button class="${POSFILTER===p?'on':''}" data-pos="${p}">${p}</button>`).join('');
+  $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { POSFILTER = b.dataset.pos; render(); });
+
+  // board
+  let rows = s.recs.filter(r => POSFILTER === 'ALL' || r.pos === POSFILTER);
+  if (POSFILTER === 'ALL') rows = rows.filter(r => !(r.pos === 'K' || r.pos === 'DST') || r.eligible).slice(0, 25); else rows = rows.slice(0, 30);
+  let html = '', lastTier = {};
+  rows.forEach((r, i) => {
+    const tb = (POSFILTER !== 'ALL' && lastTier[r.pos] !== undefined && lastTier[r.pos] !== r.tier) ? 'tierbreak' : '';
+    lastTier[r.pos] = r.tier;
+    html += `<tr class="clickable ${tb} ${r.eligible ? '' : 'inelig'}" data-key="${r.key}">
+      <td>${r.rank}</td><td><b>${r.player}</b> <span class="meta">${r.team}</span>${flagStr(r)}</td><td>${posTag(r.pos)} <span class="tier">${r.pos_rank}</span></td>
+      <td>T${r.tier}</td><td>${r.bye || ''}</td><td>${r.vbd.toFixed(0)}</td><td><b>${r.score.toFixed(0)}</b></td>
+      <td>${s.my_slot ? pct(r.p_next) : '–'}</td>
+      <td class="actions"><button data-act="other" data-key="${r.key}">Someone else</button><button class="me" data-act="mine" data-key="${r.key}">Me</button></td></tr>`;
+    if (OPEN === r.key) html += `<tr><td colspan="9"><div class="why"><ul>${r.why.map(w => `<li>${w}</li>`).join('')}</ul></div></td></tr>`;
+  });
+  $('#board').innerHTML = html || '<tr><td colspan="9">No players match.</td></tr>';
+  $('#board').querySelectorAll('tr.clickable').forEach(tr => tr.onclick = e => { if (e.target.tagName === 'BUTTON') return; OPEN = OPEN === tr.dataset.key ? null : tr.dataset.key; render(); });
+  $('#board').querySelectorAll('button[data-act]').forEach(b => b.onclick = () => pick(b.dataset.key, b.dataset.act === 'mine'));
+
+  // recommendations
+  const elig = s.recs.filter(r => r.eligible);
+  const top = elig.slice(0, 3);
+  let rh = '';
+  if (!top.length) rh = '<p class="hint">Nothing eligible. Check the rules in the help.</p>';
+  top.forEach((r, i) => {
+    rh += `<div class="rec ${i === 0 ? 'top' : ''}">
+      <div class="big">${i === 0 ? '→ ' : `${i + 1}. `}${r.player} ${posTag(r.pos)}</div>
+      <div class="sub">${r.team} · ${r.pos}${r.pos_rank} · tier ${r.tier} · bye ${r.bye || '?'} · value ${r.vbd.toFixed(0)} · fit ${r.score.toFixed(0)}${s.my_slot ? ` · lasts to your next pick: ${Math.round(r.p_next*100)}%` : ''}</div>
+      ${i === 0 || OPEN === 'rec' + i ? `<ul>${r.why.map(w => `<li>${w}</li>`).join('')}</ul>` : `<a href="#" class="hint" data-open="rec${i}">show reasoning</a>`}
+      <div class="actions"><button class="me" data-act="mine" data-key="${r.key}">✔ I drafted him</button><button data-act="other" data-key="${r.key}">Someone else took him</button></div>
+    </div>`;
+  });
+  if (top.length >= 2 && top[0].tier === top[1].tier && top[0].pos === top[1].pos) rh += `<p class="hint">${top[0].player} and ${top[1].player} are in the same tier: near-equivalent. Either is fine.</p>`;
+  $('#recs').innerHTML = rh;
+  $('#recs').querySelectorAll('button[data-act]').forEach(b => b.onclick = () => pick(b.dataset.key, b.dataset.act === 'mine'));
+  $('#recs').querySelectorAll('a[data-open]').forEach(a => a.onclick = e => { e.preventDefault(); OPEN = a.dataset.open; render(); });
+
+  // needs + roster
+  $('#needs').innerHTML = s.needs.map(n => `<div class="need"><span>${n.label}</span><span class="${n.have >= n.need ? 'ok' : 'todo'}">${n.have} / ${n.need}</span></div>`).join('');
+  $('#rostercount').textContent = `(${s.roster.length} / ${s.league.rounds} picks)`;
+  const slots = [['QB',1],['RB',2],['WR',2],['TE',1],['FLEX',1],['DST',1],['K',1]];
+  const pool = s.roster.slice(); const filled = [];
+  const takeFrom = (poss) => { const i = pool.findIndex(p => poss.includes(p.pos)); return i >= 0 ? pool.splice(i, 1)[0] : null; };
+  let rhtml = '';
+  slots.forEach(([lbl, n]) => { for (let i = 0; i < n; i++) { const p = takeFrom(lbl === 'FLEX' ? ['RB','WR','TE'] : [lbl]); rhtml += `<div class="slot"><span class="lbl">${lbl}</span>${p ? `${posTag(p.pos)} <b>${p.player}</b> <span class="meta">${p.team} · bye ${p.bye || '?'}</span>` : '<span class="empty">empty</span>'}</div>`; } });
+  pool.forEach(p => rhtml += `<div class="slot"><span class="lbl">BENCH</span>${posTag(p.pos)} ${p.player} <span class="meta">${p.team} · bye ${p.bye || '?'}</span></div>`);
+  $('#roster').innerHTML = rhtml;
+  const byes = {}; s.roster.forEach(p => { if (p.bye && ['QB','RB','WR','TE'].includes(p.pos)) byes[p.bye] = (byes[p.bye] || 0) + 1; });
+  const heavy = Object.entries(byes).filter(([b, c]) => c >= 3);
+  if (heavy.length) $('#roster').innerHTML += `<p class="hint todo">⚠ Bye pile-up: ${heavy.map(([b,c]) => `${c} players on week ${b}`).join(', ')}.</p>`;
+
+  // log
+  $('#log').innerHTML = s.log.map(p => `<div class="item ${p.mine ? 'mine' : ''}" data-key="${p.key}" title="click to flip mine/theirs"><span class="n">#${p.pick_no}</span>${posTag(p.pos)}<b>${p.player}</b><span class="meta">${p.team} · R${p.round} · team ${p.slot}${p.mine ? ' · YOU' : ''}</span></div>`).join('') || '<p class="hint">No picks yet.</p>';
+  $('#log').querySelectorAll('.item').forEach(el => el.onclick = async () => { STATE = await api('/api/toggle_mine', {key: el.dataset.key}); render(); });
+}
+function flagStr(r) {
+  const f = [];
+  if (r.flags.committee) f.push('<span title="Committee backfield: −10%">🔀</span>');
+  if (r.flags.td) f.push('<span title="TD-dependent: −5%">🎲</span>');
+  if (r.flags.same_team) f.push('<span title="You already have a starter from this team">👥</span>');
+  if (r.flags.bye_stack) f.push('<span title="Bye-week pile-up">📅</span>');
+  return f.length ? ' ' + f.join('') : '';
+}
+
+async function pick(key, mine) {
+  const j = await api('/api/pick', {key, mine});
+  if (j) { STATE = j; $('#q').value = ''; RESULTS = []; renderResults(); render(); toast(mine ? '✔ Added to your roster' : 'Marked as drafted'); $('#q').focus(); }
+}
+
+// search
+$('#q').addEventListener('input', () => { clearTimeout(TIMER); TIMER = setTimeout(search, 80); });
+async function search() {
+  const q = $('#q').value.trim();
+  if (!q) { RESULTS = []; renderResults(); return; }
+  RESULTS = await api('/api/search?q=' + encodeURIComponent(q)) || []; SEL = 0; renderResults();
+}
+function renderResults() {
+  const q = $('#q').value.trim();
+  let h = RESULTS.map((r, i) => `<div class="row ${i === SEL ? 'sel' : ''}" data-i="${i}">
+      <span class="name">${r.player}</span>${posTag(r.pos)}<span class="meta">${r.team} · T${r.tier} · #${r.rank} overall${r.adp ? ` · ADP ${r.adp}` : ''}</span>
+      <button data-act="other">Someone else ⏎</button><button class="me" data-act="mine">Me ⇧⏎</button></div>`).join('');
+  if (q && RESULTS.length < 8) h += `<div class="row" data-i="${RESULTS.length}"><span class="name" style="color:var(--muted)">Not on my board: "${q}"</span>
+      <select id="unkpos"><option>WR</option><option>RB</option><option>QB</option><option>TE</option><option>K</option><option>DST</option></select>
+      <button data-act="other" data-unk="1">Someone else</button><button class="me" data-act="mine" data-unk="1">Me</button></div>`;
+  $('#results').innerHTML = h;
+  $('#results').querySelectorAll('.row').forEach(row => {
+    row.onmouseenter = () => { SEL = +row.dataset.i; $('#results').querySelectorAll('.row').forEach(x => x.classList.toggle('sel', +x.dataset.i === SEL)); };
+    row.querySelectorAll('button').forEach(b => b.onclick = () => act(+row.dataset.i, b.dataset.act === 'mine'));
+  });
+}
+async function act(i, mine) {
+  if (i < RESULTS.length) return pick(RESULTS[i].key, mine);
+  const name = $('#q').value.trim(); if (!name) return;
+  const j = await api('/api/pick', {name, pos: $('#unkpos') ? $('#unkpos').value : 'WR', mine});
+  if (j) { STATE = j; $('#q').value = ''; RESULTS = []; renderResults(); render(); toast('Marked (unknown player)'); }
+}
+$('#q').addEventListener('keydown', e => {
+  const n = RESULTS.length + ($('#q').value.trim() && RESULTS.length < 8 ? 1 : 0);
+  if (e.key === 'ArrowDown') { SEL = Math.min(SEL + 1, n - 1); renderResults(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { SEL = Math.max(SEL - 1, 0); renderResults(); e.preventDefault(); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (n) act(SEL, e.shiftKey); }
+  else if (e.key === 'Escape') { $('#q').value = ''; RESULTS = []; renderResults(); }
+});
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); undo(); }
+  if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); }
+});
+async function undo() { STATE = await api('/api/undo', {}); render(); toast('Undid last pick'); }
+$('#undo').onclick = undo;
+$('#reset').onclick = async () => { if (confirm('Clear every pick and start the draft over?')) { STATE = await api('/api/reset', {}); render(); } };
+$('#slot').onchange = async e => { STATE = await api('/api/slot', {slot: e.target.value || null}); render(); };
+$('#help').onclick = () => $('#modal').classList.add('open');
+$('#closehelp').onclick = () => $('#modal').classList.remove('open');
+$('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.remove('open'); };
+if (!localStorage.getItem('seenHelp')) { $('#modal').classList.add('open'); localStorage.setItem('seenHelp', '1'); }
+refresh();
+</script>
+</body>
+</html>
