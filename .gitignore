@@ -1,0 +1,15 @@
+# environment
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# FantasyPros exports are their data, not ours to redistribute; nflverse cache is re-downloadable
+data/*.csv
+!data/flags.csv
+data/cache/
+
+# live draft state and generated outputs
+data/draft_state.json
+board.csv
+board.txt
