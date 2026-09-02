@@ -52,6 +52,7 @@ def save_state(st):
 
 STATE = load_state()
 STATE.setdefault("bots", [])
+STATE.setdefault("names", {})
 
 
 # ---------------------------------------------------------------- draft math
@@ -265,7 +266,7 @@ def build_state():
         elif c.get("TE", 0) == 0 and rnd >= 7: need = "TE"
         elif rnd >= 15 and (c.get("K", 0) == 0 or c.get("DST", 0) == 0): need = "K/DST"
         else: need = "depth"
-        opponents.append({"slot": sl, "is_bot": sl in bots, "is_me": sl == slot, "counts": {p: c.get(p, 0) for p in MAX_POS},
+        opponents.append({"slot": sl, "name": STATE.get("names", {}).get(str(sl), ""), "is_bot": sl in bots, "is_me": sl == slot, "counts": {p: c.get(p, 0) for p in MAX_POS},
                           "n": sum(c.values()), "picks_before_me": sl in before_me, "need": need,
                           "players": [p["player"] for p in picks if p["slot"] == sl]})
     # cost-of-waiting table
@@ -396,6 +397,18 @@ def api_slot():
 def api_bots():
     slots = request.get_json(force=True).get("slots", [])
     STATE["bots"] = sorted({int(x) for x in slots if 1 <= int(x) <= T})
+    save_state(STATE)
+    return jsonify(build_state())
+
+
+@app.post("/api/names")
+def api_names():
+    """Set team names by draft slot: {"names": {"1": "Rip Evan Lu", ...}} or {"order": ["name1", ..., "name12"]}."""
+    body = request.get_json(force=True)
+    if "order" in body:
+        STATE["names"] = {str(i + 1): n for i, n in enumerate(body["order"][:T])}
+    else:
+        STATE["names"].update({str(k): v for k, v in body.get("names", {}).items()})
     save_state(STATE)
     return jsonify(build_state())
 

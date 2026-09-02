@@ -80,6 +80,7 @@
   .opp .card .cnt { color:var(--muted); font-variant-numeric:tabular-nums; }
   .opp .card .need { color:var(--warn); }
   .opp label { color:var(--muted); font-weight:400; font-size:12px; }
+  .opp .nm { width:100%; background:#0f1115; color:var(--text); border:1px solid var(--line); border-radius:5px; font-size:12px; padding:2px 5px; margin-bottom:4px; }
   .vona td, .vona th { padding:4px 6px; }
   .log select { background:#262b36; color:var(--text); border:1px solid var(--line); border-radius:5px; font-size:12px; padding:1px 3px; }
   .setup h1 { font-size:28px; }
@@ -281,18 +282,20 @@ function render() {
 
   // opponents
   $('#opp').innerHTML = (s.opponents || []).map(o => `<div class="card ${o.picks_before_me ? 'soon' : ''} ${o.is_me ? 'me' : ''}">
-      <div class="t"><span>Team ${o.slot}${o.is_me ? ' (you)' : ''}</span><label><input type="checkbox" data-bot="${o.slot}" ${o.is_bot ? 'checked' : ''}> bot</label></div>
+      <div class="t"><span>#${o.slot}${o.is_me ? ' (you)' : ''}</span><label><input type="checkbox" data-bot="${o.slot}" ${o.is_bot ? 'checked' : ''}> bot</label></div>
+      <input class="nm" data-name="${o.slot}" value="${(o.name || '').replace(/"/g, '&quot;')}" placeholder="team name">
       <div class="cnt">${['QB','RB','WR','TE','K','DST'].map(p => o.counts[p]).join('·')} <span style="float:right">${o.n} picks</span></div>
       <div class="need">${o.is_me ? '' : 'likely wants: ' + o.need}</div>
       <div class="meta" style="font-size:11px;color:var(--muted)">${o.players.slice(-3).join(', ')}</div>
     </div>`).join('');
+  $('#opp').querySelectorAll('input[data-name]').forEach(inp => inp.onchange = async () => { STATE = await api('/api/names', {names: {[inp.dataset.name]: inp.value}}); render(); });
   $('#opp').querySelectorAll('input[data-bot]').forEach(cb => cb.onchange = async () => {
     const slots = [...$('#opp').querySelectorAll('input[data-bot]:checked')].map(x => +x.dataset.bot);
     STATE = await api('/api/bots', {slots}); render();
   });
 
   // log
-  const slotSel = (p) => `<select data-slotof="${p.key}" title="which team took him">${Array.from({length: s.league.teams}, (_, i) => i + 1).map(i => `<option value="${i}" ${i === p.slot ? 'selected' : ''}>team ${i}</option>`).join('')}</select>`;
+  const slotSel = (p) => `<select data-slotof="${p.key}" title="which team took him">${Array.from({length: s.league.teams}, (_, i) => i + 1).map(i => { const o = (s.opponents || []).find(x => x.slot === i); return `<option value="${i}" ${i === p.slot ? 'selected' : ''}>#${i}${o && o.name ? ' ' + o.name : ''}</option>`; }).join('')}</select>`;
   $('#log').innerHTML = s.log.map(p => `<div class="item ${p.mine ? 'mine' : ''}" data-key="${p.key}"><span class="n">#${p.pick_no}</span>${posTag(p.pos)}<b>${p.player}</b><span class="meta">${p.team} · R${p.round}</span>${slotSel(p)}${p.mine ? '<span class="meta">YOU</span>' : ''}</div>`).join('') || '<p class="hint">No picks yet.</p>';
   $('#log').querySelectorAll('select[data-slotof]').forEach(el => el.onchange = async () => { STATE = await api('/api/set_pick_slot', {key: el.dataset.slotof, slot: +el.value}); render(); });
 }
