@@ -43,3 +43,10 @@ remaining player by ESPN rank; human teams draw from an ADP-centred distribution
 their roster still needs. That gives each player's chance of surviving to your pick, and the
 expected best player left at each position (cost of waiting), which feeds the recommendation.
 Tick "bot" on any slot with no manager. Fix a mis-attributed pick with the team dropdown in the log.
+
+## Saturday checklist
+1. Morning: re-export the 5 FantasyPros files into `data/`, double-click **Rebuild Rankings.command**, print `board.txt`.
+2. Double-click **Start Draft Board.command**. It reopens if already running and auto-restarts if it crashes; picks persist in `data/draft_state.json`.
+3. One hour before: paste the 12 team names in draft order into Claude (or type them on the team cards), set your slot, tick bots on managerless teams.
+4. Draft: type each pick as it happens. Enter = someone else, Shift+Enter = me. Cmd+Z undoes. Take the recommendation or anyone in its tier.
+5. If the page dies and won't come back: draft off the printed `board.txt`, crossing names off.
