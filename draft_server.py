@@ -244,13 +244,17 @@ def build_state():
         pick_after = later[0] if later else None
         between_now = [(p, slot_for_pick(p)[0]) for p in range(next_pick, my_next)]
         between_next = between_now + ([(p, slot_for_pick(p)[0]) for p in range(my_next + 1, pick_after)] if pick_after else [])
-        surv_now, _, _ = simulate(avail, between_now, rosters, bots, LINEUP, seed=next_pick)
-        if pick_after:
-            surv_next, exp_best, _ = simulate(avail, between_next, rosters, bots, LINEUP, seed=next_pick + 1)
-        else:
-            surv_next, exp_best = None, {}
-        sim = {"surv_now": surv_now, "surv_next": surv_next, "exp_best_next": exp_best,
-               "n_between_now": len(between_now), "n_between_next": len(between_next), "pick_after": pick_after}
+        try:
+            surv_now, _, _ = simulate(avail, between_now, rosters, bots, LINEUP, seed=next_pick)
+            if pick_after:
+                surv_next, exp_best, _ = simulate(avail, between_next, rosters, bots, LINEUP, seed=next_pick + 1)
+            else:
+                surv_next, exp_best = None, {}
+            sim = {"surv_now": surv_now, "surv_next": surv_next, "exp_best_next": exp_best,
+                   "n_between_now": len(between_now), "n_between_next": len(between_next), "pick_after": pick_after}
+        except Exception as e:  # the fancy layer must never take down the basic board
+            print(f"[warn] opponent simulation failed, falling back to ADP odds: {e!r}")
+            sim = {}
     recs = build_recs(avail, mine, my_next or next_pick, my_picks_left, sim)
     # opponents summary
     before_me = {sl for _, sl in (sim.get("n_between_now") and [(p, slot_for_pick(p)[0]) for p in range(next_pick, my_next)] or [])}
@@ -301,6 +305,11 @@ def build_state():
 
 
 # ---------------------------------------------------------------- routes
+@app.errorhandler(Exception)
+def _any_error(e):
+    import traceback; traceback.print_exc()
+    return jsonify({"error": f"Server error: {type(e).__name__}: {e}. Your picks are saved; try Undo or reload."}), 500
+
 @app.get("/")
 def index():
     return render_template("index.html")
