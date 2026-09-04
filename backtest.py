@@ -174,7 +174,7 @@ def opp_pick(avail, counts, rnd, rng):
     return a.iloc[rng.choice(len(a), p=w)]["key"]
 
 
-def run_draft(players, strategy, my_slot, rng):
+def run_draft(players, strategy, my_slot, rng, bots=frozenset()):
     avail = players.copy()
     rosters = {s: [] for s in range(1, T + 1)}
     counts = {s: {} for s in range(1, T + 1)}
@@ -185,6 +185,9 @@ def run_draft(players, strategy, my_slot, rng):
         if slot == my_slot:
             picks_left = OFF_ROUNDS - rnd + 1
             key = my_pick(strategy, avail, counts[slot], picks_left, rnd)
+        elif slot in bots:
+            a = avail[[hard_ok(p, counts[slot], OFF_ROUNDS - rnd + 1, rnd) or p in ("RB", "WR") for p in avail["pos"]]]
+            key = (a if len(a) else avail).sort_values("adp").iloc[0]["key"]
         else:
             key = opp_pick(avail, counts[slot], rnd, rng)
         pos = avail.loc[key, "pos"]
@@ -198,6 +201,9 @@ def main():
     ap.add_argument("--year", type=int, default=2025)
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--risk", type=float, default=None)
+    ap.add_argument("--slot", type=int, default=None, help="fix my draft slot (default random)")
+    ap.add_argument("--strategies", default="adp_naive,adp_rules,raw_vbd,floor_vbd")
+    ap.add_argument("--bots", default="", help="comma-separated slots that autodraft by ADP")
     args = ap.parse_args()
     s = load_settings()
     if args.risk is not None: s["risk_aversion"] = args.risk
@@ -213,13 +219,14 @@ def main():
     print(f"{args.year}: {len(df)} drafted-pool players from ADP; {matched:.0%} matched to actual stats; risk_aversion={s['risk_aversion']}")
     pos_of = df["pos"].to_dict()
 
-    strategies = ["adp_naive", "adp_rules", "raw_vbd", "floor_vbd"]
+    strategies = args.strategies.split(",")
+    bots = {int(x) for x in args.bots.split(",") if x}
     results = {st: [] for st in strategies}
     for d in range(args.n):
-        slot = int(np.random.default_rng(1000 + d).integers(1, T + 1))
+        slot = args.slot or int(np.random.default_rng(1000 + d).integers(1, T + 1))
         for st in strategies:
             rng = np.random.default_rng(d)   # same opponent randomness for each strategy
-            rosters = run_draft(df, st, slot, rng)
+            rosters = run_draft(df, st, slot, rng, bots)
             totals = {sl: season_total(r, pos_of, piv) for sl, r in rosters.items()}
             mine = totals[slot]
             rank = 1 + sum(1 for sl, t in totals.items() if sl != slot and t > mine)
@@ -230,7 +237,7 @@ def main():
     for st in strategies:
         a = np.array(results[st]); pts, rk = a[:, 0], a[:, 1]
         print(f"{st:<12}{pts.mean():>10.0f}{np.percentile(pts, 10):>10.0f}{np.median(pts):>9.0f}{rk.mean():>11.2f}{(rk == 12).mean():>9.1%}{(rk >= 10).mean():>9.1%}{(rk <= 4).mean():>9.1%}")
-    out = DATA / "cache" / f"backtest_{args.year}.json"
+    out = DATA / "cache" / f"backtest_{args.year}_slot{args.slot or 0}.json"
     out.write_text(json.dumps({st: results[st] for st in strategies}))
 
 
