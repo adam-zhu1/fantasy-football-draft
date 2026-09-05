@@ -6,6 +6,10 @@ _SUFFIX = re.compile(r"\b(jr|sr|ii|iii|iv|v)\b\.?", re.I)
 TEAM_FIX = {"JAC": "JAX", "WSH": "WAS", "LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR"}
 
 
+ALIASES = {"kennygainwell": "kennethgainwell", "devonachane": "devonachane", "hollywoodbrown": "marquisebrown",
+           "chigoziemokonkwo": "chigokonkwo", "joshuapalmer": "joshpalmer", "gabedavis": "gabrieldavis"}
+
+
 def norm_name(name: str) -> str:
     """Canonical join key: lowercase, ascii, no suffixes/punctuation/spaces."""
     if name is None:
@@ -14,7 +18,7 @@ def norm_name(name: str) -> str:
     s = s.lower()
     s = _SUFFIX.sub("", s)
     s = re.sub(r"[^a-z]", "", s)
-    return s
+    return ALIASES.get(s, s)
 
 
 def norm_team(t):
