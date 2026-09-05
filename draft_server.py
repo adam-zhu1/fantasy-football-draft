@@ -29,6 +29,9 @@ POS_LABEL = {"QB": "quarterback", "RB": "running back", "WR": "wide receiver", "
 BOARD = pd.read_csv(ROOT / "board.csv")
 BOARD["team"] = BOARD["team"].fillna("")
 BOARD["bye"] = BOARD["bye"].fillna(0).astype(int)
+for _c, _d in [("vbd_model", None), ("market_rank", float("nan")), ("model_rank", None), ("avoid", False)]:
+    if _c not in BOARD: BOARD[_c] = BOARD["vbd"] if _d is None and _c == "vbd_model" else (BOARD["rank"] if _c == "model_rank" else _d)
+MARKET_W = float(S.get("market_weight", 0.0))
 BOARD = BOARD.set_index("key", drop=False)
 def _initials(name):
     parts = [t for t in re.split(r"[\s\-]+", re.sub(r"[.']", "", name)) if t and t.lower() not in ("jr", "sr", "ii", "iii", "iv")]
@@ -182,6 +185,10 @@ def build_recs(avail, mine, next_pick, my_picks_left, sim=None):
 
         why = []
         why.append(f"{POS_LABEL[pos].title()} #{int(r['pos_rank'])} on the board, tier {int(r['pos_tier'])}. {tier_left} player{'s' if tier_left != 1 else ''} left in this tier.")
+        if pd.notna(r.get("market_rank")) and MARKET_W > 0:
+            mr, mo = int(r["market_rank"]), int(r["model_rank"])
+            verdict = "agree" if abs(mr - mo) <= 5 else ("the experts like him more" if mr < mo else "the model likes him more")
+            why.append(f"Expert consensus: #{mr} overall. Model alone: #{mo}. They {verdict}; the board is {MARKET_W:.0%} experts / {1-MARKET_W:.0%} model.")
         if gap_tier >= 8:
             why.append(f"The next {pos} tier starts {gap_tier:.0f} points lower. That's a real drop-off.")
         elif gap_tier > 0 and next_name:
@@ -203,12 +210,15 @@ def build_recs(avail, mine, next_pick, my_picks_left, sim=None):
         if bool(r["td_dep"]): why.append("Touchdown-dependent: more than 35% of his points come from TDs, which are volatile. Docked 5%.")
         if same_team: why.append(f"You already have a starter from {r['team']}. Stacking one offense raises your bust risk, so −8%.")
         if bye_pen: why.append(f"That would put {n_bye} of your starters on the same bye week ({int(r['bye'])}). Penalized {bye_pen:.0f} points.")
+        if bool(r.get("avoid", False)):
+            elig, why_not = False, "On your avoid list (data/flags.csv)."
         if not elig: why.insert(0, "NOT ALLOWED: " + why_not)
 
         rows.append({
             "key": key, "player": r["player"], "team": r["team"], "pos": pos, "bye": int(r["bye"]),
             "pos_rank": int(r["pos_rank"]), "tier": int(r["pos_tier"]), "rank": int(r["rank"]),
             "proj": round(float(r["proj_pts"]), 1), "vbd": round(vbd, 1), "score": round(score, 1),
+            "exp_rank": (None if pd.isna(r.get("market_rank")) else int(r["market_rank"])), "model_rank": int(r["model_rank"]),
             "adp": adp, "p_now": round(p_now, 2), "p_next": round(p_next, 2),
             "eligible": elig, "why": why, "decay": round(decay, 1), "flags": {"committee": bool(r["committee"]), "td": bool(r["td_dep"]), "same_team": same_team, "bye_stack": bye_pen > 0},
         })
