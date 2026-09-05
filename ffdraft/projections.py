@@ -63,11 +63,10 @@ def load_dst():
     return df[["player", "team", "fp_pts", "pos"]]
 
 
-def load_adp():
-    """Rank,Player (Bye),POS,ESPN,Sleeper,...,AVG,Real-Time"""
-    df = _read(_find("*ADP*.csv"))
+def _load_fp_adp():
+    """FantasyPros ADP export: Rank,Player (Bye),POS,ESPN,Sleeper,...,AVG"""
+    df = _read(_find("*FantasyPros*ADP*.csv"))
     pb = df["Player (Bye)"].str.strip()
-    # "Jahmyr Gibbs   DET (6)"  |  "Houston Texans   (6)"  | some rows may lack bye
     m = pb.str.extract(r"^(?P<name>.+?)\s{2,}(?P<team>[A-Z]{2,3})?\s*(?:\((?P<bye>\d+)\))?$")
     out = pd.DataFrame({
         "player": m["name"].fillna(pb).str.strip().str.replace(r"\s+DST$", "", regex=True),
@@ -79,6 +78,49 @@ def load_adp():
         "adp_sleeper": _num(df["Sleeper"]) if "Sleeper" in df else np.nan,
     })
     out["key"] = out["player"].map(norm_name)
+    return out
+
+
+def _load_consensus_adp():
+    """Multi-site consensus export: Rank,Player,POS,Team,AVG,Expert,Sleeper,ESPN,Yahoo,Underdog,CBS,FFPC
+    (e.g. data/ppr_overall_7d_<date>.csv). Newest file wins. AVG is the consensus ADP we rank by."""
+    hits = sorted(DATA.glob("ppr_overall_*.csv"), key=lambda f: f.stat().st_mtime)
+    if not hits:
+        return None
+    df = pd.read_csv(hits[-1], dtype=str, keep_default_na=False)
+    out = pd.DataFrame({
+        "player": df["Player"].str.strip(),
+        "adp_team": df["Team"].map(norm_team),
+        "bye": np.nan,
+        "pos": df["POS"].str.extract(r"([A-Z]+)")[0].replace({"DEF": "DST"}),
+        "adp_avg": _num(df["AVG"]),
+        "adp_espn": _num(df["ESPN"]) if "ESPN" in df else np.nan,
+        "adp_sleeper": _num(df["Sleeper"]) if "Sleeper" in df else np.nan,
+        "adp_expert": _num(df["Expert"]) if "Expert" in df else np.nan,
+    })
+    out["key"] = out["player"].map(norm_name)
+    out = out.dropna(subset=["adp_avg"])
+    return out, hits[-1].name
+
+
+def load_adp():
+    """Consensus ADP (AVG across sites). Prefers the newest data/ppr_overall_*.csv; falls back to the
+    FantasyPros export. Bye weeks come from the FantasyPros export when the consensus file lacks them."""
+    cons = _load_consensus_adp()
+    try:
+        fp = _load_fp_adp()
+    except FileNotFoundError:
+        fp = None
+    if cons is None:
+        if fp is None:
+            raise FileNotFoundError("No ADP file in data/")
+        fp.attrs["source"] = "FantasyPros ADP export"
+        return fp
+    out, name = cons
+    if fp is not None:
+        byes = fp.dropna(subset=["bye"]).drop_duplicates("key").set_index("key")["bye"]
+        out["bye"] = out["key"].map(byes)
+    out.attrs["source"] = name
     return out
 
 
