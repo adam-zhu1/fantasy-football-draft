@@ -122,7 +122,7 @@
       <div class="tabs" id="tabs"></div>
       <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Tier</th><th>Bye</th><th>Value</th><th>Fit</th><th id="lasts-h" title="Chance he's still available when you pick">Lasts?</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Tier</th><th>Bye</th><th title="Expert consensus overall rank">Exp#</th><th>Value</th><th>Fit</th><th id="lasts-h" title="Chance he's still available when you pick">Lasts?</th><th></th></tr></thead>
         <tbody id="board"></tbody>
       </table>
       </div>
@@ -176,6 +176,7 @@
     <li><b>Fit</b>: Value plus bonuses/penalties for what your roster needs (open starting slot, too many from one NFL team, bye-week pile-up).</li>
     <li><b>Lasts?</b>: chance the player is still available when your turn comes, from simulating every pick in between using each team's roster needs (and ESPN rank for bots). Under 50% means "now or never".</li>
     <li><b>Cost of waiting</b>: how much value you lose at a position by not taking its best player now, compared with the best one expected to be left at your next turn. Big number = take that position now.</li>
+    <li><b>Exp#</b>: where the expert consensus ranks the player overall. The board's Value is a blend of the model and this rank (weight in settings.json).</li>
     <li><b>Tier</b>: a group of players with similar value. The dashed lines on the board.</li>
     <li><b>Bye</b>: the week that player's NFL team doesn't play. He scores 0 that week. Avoid piling 4+ starters on the same bye.</li>
     <li><b>FLEX</b>: a starting slot that can hold a RB, WR, or TE.</li>
@@ -234,12 +235,12 @@ function render() {
     lastTier[r.pos] = r.tier;
     html += `<tr class="clickable ${tb} ${r.eligible ? '' : 'inelig'}" data-key="${r.key}">
       <td>${r.rank}</td><td><b>${r.player}</b> <span class="meta">${r.team}</span>${flagStr(r)}</td><td>${posTag(r.pos)} <span class="tier">${r.pos_rank}</span></td>
-      <td>T${r.tier}</td><td>${r.bye || ''}</td><td>${r.vbd.toFixed(0)}</td><td><b>${r.score.toFixed(0)}</b></td>
+      <td>T${r.tier}</td><td>${r.bye || ''}</td><td class="meta">${r.exp_rank ?? '–'}</td><td>${r.vbd.toFixed(0)}</td><td><b>${r.score.toFixed(0)}</b></td>
       <td>${s.my_slot ? pct(s.my_turn ? r.p_next : r.p_now) : '–'}</td>
       <td class="actions"><button data-act="other" data-key="${r.key}">Someone else</button><button class="me" data-act="mine" data-key="${r.key}">Me</button></td></tr>`;
-    if (OPEN === r.key) html += `<tr><td colspan="9"><div class="why"><ul>${r.why.map(w => `<li>${w}</li>`).join('')}</ul></div></td></tr>`;
+    if (OPEN === r.key) html += `<tr><td colspan="10"><div class="why"><ul>${r.why.map(w => `<li>${w}</li>`).join('')}</ul></div></td></tr>`;
   });
-  $('#board').innerHTML = html || '<tr><td colspan="9">No players match.</td></tr>';
+  $('#board').innerHTML = html || '<tr><td colspan="10">No players match.</td></tr>';
   $('#board').querySelectorAll('tr.clickable').forEach(tr => tr.onclick = e => { if (e.target.tagName === 'BUTTON') return; OPEN = OPEN === tr.dataset.key ? null : tr.dataset.key; render(); });
   $('#board').querySelectorAll('button[data-act]').forEach(b => b.onclick = () => pick(b.dataset.key, b.dataset.act === 'mine'));
 
@@ -251,7 +252,7 @@ function render() {
   top.forEach((r, i) => {
     rh += `<div class="rec ${i === 0 ? 'top' : ''}">
       <div class="big">${i === 0 ? '→ ' : `${i + 1}. `}${r.player} ${posTag(r.pos)}</div>
-      <div class="sub">${r.team} · ${r.pos}${r.pos_rank} · tier ${r.tier} · bye ${r.bye || '?'} · value ${r.vbd.toFixed(0)} · fit ${r.score.toFixed(0)}${s.my_slot ? ` · still there at your following pick: ${Math.round(r.p_next*100)}%` : ''}</div>
+      <div class="sub">${r.team} · ${r.pos}${r.pos_rank} · tier ${r.tier}${r.exp_rank ? ` · experts #${r.exp_rank}` : ''} · bye ${r.bye || '?'} · value ${r.vbd.toFixed(0)} · fit ${r.score.toFixed(0)}${s.my_slot ? ` · still there at your following pick: ${Math.round(r.p_next*100)}%` : ''}</div>
       ${i === 0 || OPEN === 'rec' + i ? `<ul>${r.why.map(w => `<li>${w}</li>`).join('')}</ul>` : `<a href="#" class="hint" data-open="rec${i}">show reasoning</a>`}
       <div class="actions"><button class="me" data-act="mine" data-key="${r.key}">✔ I drafted him</button><button data-act="other" data-key="${r.key}">Someone else took him</button></div>
     </div>`;
