@@ -76,6 +76,7 @@ def _load_fp_adp():
         "adp_avg": _num(df["AVG"]),
         "adp_espn": _num(df["ESPN"]) if "ESPN" in df else np.nan,
         "adp_sleeper": _num(df["Sleeper"]) if "Sleeper" in df else np.nan,
+        "adp_expert": np.nan,
     })
     out["key"] = out["player"].map(norm_name)
     return out

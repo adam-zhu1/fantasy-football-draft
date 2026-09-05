@@ -71,7 +71,8 @@ def build_board(proj: pd.DataFrame, adp: pd.DataFrame, priors: dict, s: dict) ->
     # ---- ADP join (offense by name; DST by team nickname) ----
     a = adp.copy()
     a = a.sort_values("adp_avg").drop_duplicates("key")
-    df = df.merge(a[["key", "bye", "adp_avg", "adp_espn", "adp_sleeper"]], on="key", how="left")
+    if "adp_expert" not in a: a["adp_expert"] = np.nan
+    df = df.merge(a[["key", "bye", "adp_avg", "adp_espn", "adp_sleeper", "adp_expert"]], on="key", how="left")
     # bye for players missing from ADP: borrow team bye
     team_bye = df.dropna(subset=["bye"]).groupby("team")["bye"].agg(lambda x: x.mode().iloc[0])
     df["bye"] = df["bye"].fillna(df["team"].map(team_bye))
@@ -119,15 +120,51 @@ def build_board(proj: pd.DataFrame, adp: pd.DataFrame, priors: dict, s: dict) ->
         colr = df[df["pos"] == pos].sort_values("proj_pts", ascending=False)
         base_raw[pos] = colr["proj_pts"].iloc[min(n, len(colr)) - 1]
     df["baseline_n"] = df["pos"].map(base_n)
-    df["vbd"] = df["floor_value"] - df["pos"].map(base_pts)
+    df["vbd_model"] = df["floor_value"] - df["pos"].map(base_pts)
     df["vbd_raw"] = df["proj_pts"] - df["pos"].map(base_raw)
+
+    # ---- blend with expert consensus / market rank ----
+    # Market rank -> value: the r-th ranked player by consensus is given the VBD of the r-th best
+    # player on the model board, so both live on the same points scale. Expert rank where available,
+    # else consensus ADP. Players the market doesn't rank keep their model value.
+    w_mkt = float(s.get("market_weight", 0.0))
+    df["market_rank"] = df["adp_expert"].where(df["adp_expert"].notna(), df["adp_avg"])
+    curve = np.sort(df["vbd_model"].to_numpy())[::-1]
+    def mkt_vbd(r):
+        if pd.isna(r): return np.nan
+        i = float(r) - 1.0
+        if i >= len(curve) - 1: return float(curve[-1])
+        lo = int(np.floor(i)); return float(curve[lo] + (i - lo) * (curve[min(lo + 1, len(curve) - 1)] - curve[lo]))
+    df["vbd_market"] = df["market_rank"].map(mkt_vbd)
+    has = df["vbd_market"].notna()
+    df["vbd"] = df["vbd_model"]
+    df.loc[has, "vbd"] = (1 - w_mkt) * df.loc[has, "vbd_model"] + w_mkt * df.loc[has, "vbd_market"]
+
+    # ---- manual avoid / adjust from data/flags.csv ----
+    df["avoid"] = False
+    f = DATA / "flags.csv"
+    if f.exists():
+        man = pd.read_csv(f, dtype=str, keep_default_na=False)
+        from .names import norm_name
+        man["key"] = man["player"].map(norm_name)
+        for _, m in man.iterrows():
+            idx = df.index[df["key"] == m["key"]]
+            if len(idx) == 0: continue
+            if str(m.get("avoid", "")).strip() == "1":
+                df.loc[idx, "avoid"] = True; df.loc[idx, "vbd"] = df.loc[idx, "vbd"] - 500
+            adj = str(m.get("adjust", "")).strip()
+            if adj:
+                try: df.loc[idx, "vbd"] = df.loc[idx, "vbd"] * float(adj)
+                except ValueError: pass
 
     df = df.sort_values("vbd", ascending=False).reset_index(drop=True)
     df["rank"] = np.arange(1, len(df) + 1)
     df["pos_rank"] = df.groupby("pos")["vbd"].rank(ascending=False, method="first").astype(int)
     df["pos_tier"] = tiers_by_gap(df)
     df["adp_diff"] = df["adp_avg"] - df["rank"]      # + means we like him more than the market
+    df["model_rank"] = df["vbd_model"].rank(ascending=False, method="first").astype(int)
     df.attrs["baselines"] = {p: (base_n[p], round(base_pts[p], 1)) for p in base_n}
+    df.attrs["market_weight"] = w_mkt
     return df
 
 

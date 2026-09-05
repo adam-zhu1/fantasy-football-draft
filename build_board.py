@@ -17,9 +17,10 @@ def fmt_row(r):
     tag = ("C" if r.committee else " ") + ("T" if r.td_dep else " ")
     adp = f"{r.adp_avg:5.1f}" if pd.notna(r.adp_avg) else "  n/a"
     bye = f"{int(r.bye):2d}" if pd.notna(r.bye) else " ?"
+    mr = f"{int(r.market_rank):3d}" if pd.notna(r.market_rank) else "  -"
     return (f"{int(r['rank']):3d}  {r.pos:<3}{int(r.pos_rank):<3d} T{int(r.pos_tier):<2d} "
             f"{r.player[:24]:<24} {r.team:<4}bye{bye}  proj{r.proj_pts:6.1f}  g{r.exp_games:4.1f}  sd{r.weekly_sd:4.1f}  "
-            f"floor{r.floor_value:6.1f}  VBD{r.vbd:6.1f}  ADP{adp} {tag}")
+            f"VBD{r.vbd:6.1f} (model{r.vbd_model:6.1f}) exp#{mr} ADP{adp} {tag}")
 
 
 def print_overall(df, n):
@@ -57,13 +58,13 @@ def main():
     board = build_board(proj, adp, priors, s)
 
     cols = ["rank", "player", "team", "pos", "pos_rank", "pos_tier", "bye", "proj_pts", "ppg", "exp_games", "weekly_sd",
-            "floor_value", "vbd", "vbd_raw", "committee", "td_share", "td_dep", "adp_avg", "adp_espn", "adp_sleeper", "adp_diff",
+            "floor_value", "vbd", "vbd_model", "vbd_market", "market_rank", "model_rank", "avoid", "vbd_raw", "committee", "td_share", "td_dep", "adp_avg", "adp_espn", "adp_sleeper", "adp_diff",
             "fp_pts", "hist_seasons", "hist_games", "key"]
     board[cols].to_csv(ROOT / "board.csv", index=False)
 
     if args.quiet:
         return
-    print(f"settings: {s['num_teams']} teams, scoring={s['scoring']}, risk_aversion={s['risk_aversion']}")
+    print(f"settings: {s['num_teams']} teams, scoring={s['scoring']}, risk_aversion={s['risk_aversion']}, market_weight={s['market_weight']} (expert/ADP rank share)")
     print("baselines (N, floor pts):", board.attrs["baselines"])
     pg = priors["pos_prior_games"]
     print("positional expected games (last 3 seasons, relevant players):", {p: round(v, 1) for p, v in pg.items()})

@@ -13,7 +13,8 @@ DEFAULTS = {
     "td_dependence_threshold": 0.35,
     "td_dependence_penalty": 0.05,
     "history_seasons": [2023, 2024, 2025],
-    "prior_shrink_seasons": 2.0,          # weight of positional prior vs player history, in "seasons"
+    "prior_shrink_seasons": 2.0,
+    "market_weight": 0.6,                 # blend: (1-w)*model VBD + w*market-implied VBD          # weight of positional prior vs player history, in "seasons"
 }
 
 

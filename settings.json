@@ -31,10 +31,12 @@
   "ir_slots": 1,
   "draft_type": "snake",
   "seconds_per_pick": 90,
-  "my_draft_slot": 5,
+  "my_draft_slot": 7,
   "draft_date": "2026-09-05 21:00 (approx)",
   "risk_aversion": 0.4,
   "min_rb": 5,
   "min_wr": 6,
-  "all_teams_human": true
+  "all_teams_human": true,
+  "market_weight": 0.6,
+  "_market_weight_note": "0 = pure model, 1 = pure expert consensus rank. Expert column used where present, else consensus ADP."
 }
