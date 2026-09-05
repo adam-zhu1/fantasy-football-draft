@@ -187,8 +187,8 @@ def build_recs(avail, mine, next_pick, my_picks_left, sim=None):
         why.append(f"{POS_LABEL[pos].title()} #{int(r['pos_rank'])} on the board, tier {int(r['pos_tier'])}. {tier_left} player{'s' if tier_left != 1 else ''} left in this tier.")
         if pd.notna(r.get("market_rank")) and MARKET_W > 0:
             mr, mo = int(r["market_rank"]), int(r["model_rank"])
-            verdict = "agree" if abs(mr - mo) <= 5 else ("the experts like him more" if mr < mo else "the model likes him more")
-            why.append(f"Expert consensus: #{mr} overall. Model alone: #{mo}. They {verdict}; the board is {MARKET_W:.0%} experts / {1-MARKET_W:.0%} model.")
+            verdict = "They agree." if abs(mr - mo) <= 5 else ("The experts like him more than the model does." if mr < mo else "The model likes him more than the experts do.")
+            why.append(f"Expert consensus: #{mr} overall. Model alone: #{mo}. {verdict} The board is {MARKET_W:.0%} experts / {1-MARKET_W:.0%} model.")
         if gap_tier >= 8:
             why.append(f"The next {pos} tier starts {gap_tier:.0f} points lower. That's a real drop-off.")
         elif gap_tier > 0 and next_name:
