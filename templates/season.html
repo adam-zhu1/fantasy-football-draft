@@ -57,7 +57,7 @@
 </header>
 <div class="tabs" id="tabs">
   <button data-t="lineup" class="on">Lineup</button><button data-t="matchup">My matchup</button><button data-t="predict">Predictions</button>
-  <button data-t="power">Power rankings</button><button data-t="waivers">Waivers</button><button data-t="rosters">Rosters</button><button data-t="manage">Manage</button>
+  <button data-t="power">Power rankings</button><button data-t="outlook">Season outlook</button><button data-t="waivers">Waivers</button><button data-t="rosters">Rosters</button><button data-t="manage">Manage</button>
 </div>
 <main id="main"><p class="hint">Loading…</p></main>
 <div class="toast" id="toast"></div>
@@ -74,7 +74,7 @@ function render(){
   const sel=$('#week'); if(!sel.options.length){ for(let w=1;w<=17;w++){const o=document.createElement('option');o.value=w;o.textContent=w;sel.appendChild(o);} }
   sel.value=D.week; $('#meta').textContent=`rankings from ${D.scraped} · generated ${D.generated}`;
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on', b.dataset.t===TAB));
-  const f = {lineup, matchup, predict, power, waivers, rosters, manage}[TAB]; $('#main').innerHTML = f();
+  const f = {lineup, matchup, predict, power, outlook, waivers, rosters, manage}[TAB]; $('#main').innerHTML = f();
   wire();
 }
 function playerRow(p, showSlot){ return `<tr><td>${showSlot?`<b>${p.slot}</b>`:''}</td><td>${posTag(p.pos)} <b>${p.player}</b> <span class="muted">${p.team}</span></td><td>${p.opp}</td><td>${p.when}${p.bye?' <span class="lock">BYE</span>':''}</td><td><b>${p.proj.toFixed(1)}</b></td><td>${grade(p.grade)}</td><td class="muted">${p.ecr??''}</td>${D.has_actuals?`<td>${p.actual??''}</td>`:''}</tr>`; }
@@ -111,6 +111,14 @@ function power(){
     <table><thead><tr><th>#</th><th>Team</th><th>Manager</th><th>Season strength</th><th>Depth</th><th>This week</th></tr></thead><tbody>
     ${D.power.map(p=>`<tr class="${p.team===D.me?'me':''}"><td>${p.rank}</td><td><b>${p.team}</b></td><td class="muted">${p.manager}</td><td>${p.season}</td><td>${p.depth}</td><td>${p.week}</td></tr>`).join('')}</tbody></table>
     <p class="hint">Strongest: <b>${D.power[0].team}</b>. Weakest: <b>${D.power[D.power.length-1].team}</b>. You: <b>#${D.power.find(p=>p.team===D.me).rank}</b> by starters, <b>#${[...D.power].sort((a,b)=>b.depth-a.depth).findIndex(p=>p.team===D.me)+1}</b> by depth.</p></div>`;
+}
+function outlook(){
+  const o = D.outlook; const me = o.find(x=>x.team===D.me);
+  return `<div class="panel"><h2>Season outlook — ${(15-D.week)} regular-season weeks simulated 4,000 times</h2>
+    <p class="hint">Each team's weekly score is drawn around its projected strength; every remaining matchup on the schedule is played out. Top 6 make the playoffs. This ignores injuries and trades, so treat it as a baseline, not a forecast.</p>
+    <div class="kv"><div><span>Your expected wins</span><b>${me.exp_wins} / 14</b></div><div><span>Playoffs</span><b>${pct(me.p_playoffs)}</b></div><div><span>Finish last</span><b class="${me.p_last<0.06?'grade gA':'grade gC'}">${pct(me.p_last)}</b></div><div><span>Schedule difficulty</span><b>#${[...o].sort((a,b)=>b.sos-a.sos).findIndex(x=>x.team===D.me)+1} hardest</b></div></div>
+    <table style="margin-top:12px"><thead><tr><th>#</th><th>Team</th><th>Weekly strength</th><th>Opp. strength (SOS)</th><th>Exp. wins</th><th>Playoffs</th><th>1st</th><th>Last</th></tr></thead><tbody>
+    ${o.map((x,i)=>`<tr class="${x.team===D.me?'me':''}"><td>${i+1}</td><td><b>${x.team}</b></td><td>${x.mu}</td><td>${x.sos}</td><td>${x.exp_wins}</td><td>${pct(x.p_playoffs)}</td><td>${pct(x.p_top)}</td><td>${pct(x.p_last)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function waivers(){
   return `<div class="panel"><h2>Waiver targets — unrostered players worth a look</h2><p class="hint">Ranked by season value. "Drop" is your weakest player at that position; "Gain" is the season value you'd add. Only bother when Gain is clearly positive. After you make a move in ESPN, record it in the Manage tab.</p>

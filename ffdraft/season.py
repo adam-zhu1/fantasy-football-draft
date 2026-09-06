@@ -110,24 +110,23 @@ def save_matchups(m):
 
 
 def parse_schedule_paste(text, team_names):
-    """Heuristic parser for a pasted ESPN League > Schedule page: finds 'Week N' headers and pairs
-    consecutive team-name mentions inside each week."""
-    names = sorted(team_names, key=len, reverse=True)
+    """Parse a pasted ESPN League > Schedule page. Inside each 'NFL Week N' block, a team name is the
+    line right before a record like '(0-0-0)'; consecutive team names form a matchup (away, home)."""
+    lines = [l.strip() for l in text.splitlines()]
     weeks, cur = {}, None
-    for line in text.splitlines():
-        m = re.search(r"\b(?:Week|WEEK)\s+(\d{1,2})\b", line)
+    for i, l in enumerate(lines):
+        m = re.match(r"^(?:NFL\s+)?Week\s+(\d{1,2})$", l)
         if m:
             cur = int(m.group(1)); weeks.setdefault(cur, []); continue
-        if cur is None: continue
-        s = line.strip()
-        for n in names:
-            if s == n or s.startswith(n + " ") or s == n.strip():
-                weeks[cur].append(n); break
+        if re.match(r"^Playoff", l):
+            cur = None; continue
+        if cur is None or not l: continue
+        if i + 1 < len(lines) and re.match(r"^\(\d+-\d+-\d+\)$", lines[i + 1]):
+            weeks[cur].append(l)
     out = {}
     for w, seq in weeks.items():
         pairs = [[seq[i], seq[i + 1]] for i in range(0, len(seq) - 1, 2)]
-        pairs = [p for p in pairs if p[0] != p[1]]
-        if pairs: out[w] = pairs[:6]
+        if pairs: out[w] = pairs
     return out
 
 
@@ -241,7 +240,9 @@ def compute(week=None, force=False):
                         "week_proj": round(float(rk.loc[k, "proj"]), 1), "drop": (w["player"] if w else None), "gain": round(float(gain), 1), "worth_it": bool(gain > 3)})
 
     first_lock = min((p["lock"] for p in me["lineup"] if p.get("player") and p["lock"]), default="")
+    outlook = season_outlook(teams, matchups, week)
     return {
+        "outlook": outlook,
         "week": week, "scraped": scraped, "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "me": me_name, "opp": opp_name, "lineup": me["lineup"], "bench": me["bench"], "mean": me["mean"], "sd": me["sd"],
         "opp_lineup": (opp["lineup"] if opp else []), "opp_mean": (opp["mean"] if opp else None),
@@ -251,6 +252,34 @@ def compute(week=None, force=False):
         "teams": {t: {"manager": T["manager"], "players": T["players"], "mean": T["mean"], "actual": T["actual"]} for t, T in teams.items()},
         "weeks_with_matchups": sorted(matchups.keys()), "has_actuals": bool(actual),
     }
+
+
+def season_outlook(teams, matchups, from_week, n=4000, seed=7):
+    """Simulate the remaining regular season. Weekly score ~ N(mu, 21) where mu = season-starter strength
+    per game + ~15 for K/DST. Returns per-team expected wins, P(playoffs = top 6), P(last), and
+    strength of schedule (average opponent mu)."""
+    names = list(teams)
+    mu = {t: teams[t]["season"] / 17 + 15 for t in names}
+    rng = np.random.default_rng(seed)
+    wins = {t: np.zeros(n) for t in names}; pts = {t: np.zeros(n) for t in names}
+    weeks = [w for w in matchups if w >= from_week and w <= 14]
+    for w in weeks:
+        for a, b in matchups[w]:
+            if a not in teams or b not in teams: continue
+            sa = rng.normal(mu[a], 21, n); sb = rng.normal(mu[b], 21, n)
+            wins[a] += sa > sb; wins[b] += sb > sa; pts[a] += sa; pts[b] += sb
+    W = np.column_stack([wins[t] for t in names]); Pt = np.column_stack([pts[t] for t in names])
+    # rank by wins, tiebreak points
+    order = np.lexsort((-Pt, -W), axis=1) if False else None
+    score = W * 1e6 + Pt
+    ranks = (-score).argsort(axis=1).argsort(axis=1) + 1
+    out = []
+    for i, t in enumerate(names):
+        opp_mu = [mu[b if a == t else a] for w in weeks for a, b in matchups[w] if t in (a, b)]
+        out.append({"team": t, "exp_wins": round(float(W[:, i].mean()), 1), "p_playoffs": round(float((ranks[:, i] <= 6).mean()), 3),
+                    "p_last": round(float((ranks[:, i] == 12).mean()), 3), "p_top": round(float((ranks[:, i] == 1).mean()), 3),
+                    "sos": round(float(np.mean(opp_mu)) if opp_mu else 0, 1), "mu": round(mu[t], 1)})
+    return sorted(out, key=lambda x: -x["exp_wins"])
 
 
 def render_markdown(d):
