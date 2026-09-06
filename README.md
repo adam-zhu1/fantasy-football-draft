@@ -50,3 +50,10 @@ Tick "bot" on any slot with no manager. Fix a mis-attributed pick with the team 
 3. One hour before: paste the 12 team names in draft order into Claude (or type them on the team cards), set your slot, tick bots on managerless teams.
 4. Draft: type each pick as it happens. Enter = someone else, Shift+Enter = me. Cmd+Z undoes. Take the recommendation or anyone in its tier.
 5. If the page dies and won't come back: draft off the printed `board.txt`, crossing names off.
+
+## In-season (Part 5)
+    python week.py             # this week's report -> weekN_report.md
+Prints the lineup to enter in ESPN (with lock times), alerts (byes, missing from rankings), your matchup win
+probability, predictions for every matchup, power rankings, and waiver targets. Uses FantasyPros weekly
+consensus via nflverse (refreshes daily), so re-run Saturday night or Sunday morning for the latest.
+Rosters live in data/league_rosters.json and matchups in data/league_schedule.json (both local-only).
