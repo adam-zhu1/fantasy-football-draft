@@ -57,3 +57,8 @@ Prints the lineup to enter in ESPN (with lock times), alerts (byes, missing from
 probability, predictions for every matchup, power rankings, and waiver targets. Uses FantasyPros weekly
 consensus via nflverse (refreshes daily), so re-run Saturday night or Sunday morning for the latest.
 Rosters live in data/league_rosters.json and matchups in data/league_schedule.json (both local-only).
+
+### Season dashboard
+Double-click **Start Season Dashboard.command** (or `python season_server.py`) → http://127.0.0.1:5056.
+Tabs: Lineup (what to set in ESPN, lock times, alerts, close calls), My matchup (win probability), Predictions,
+Power rankings, Waivers, Rosters, Manage (record adds/drops; paste the ESPN schedule page to load matchups).
