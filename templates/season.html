@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Season Dashboard — RIP EVAN LU</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --text:#e8eaf0; --muted:#9aa3b2; --accent:#4fd1c5; --good:#48bb78; --warn:#f6ad55; --bad:#fc8181; --me:#63b3ed;
+          --RB:#f6ad55; --WR:#63b3ed; --QB:#fc8181; --TE:#b794f4; --K:#9aa3b2; --DST:#9aa3b2; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0 8px 0 0; }
+  .spacer { flex:1; }
+  button, select, input, textarea { background:#262b36; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 12px; font-size:14px; }
+  button { cursor:pointer; } button:hover { background:#303646; }
+  button.primary { background:var(--accent); color:#06231f; border-color:transparent; font-weight:700; }
+  .tabs { display:flex; gap:6px; padding:12px 18px 0; flex-wrap:wrap; }
+  .tabs button.on { background:var(--accent); color:#06231f; font-weight:700; }
+  main { padding:14px 18px 40px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:16px; }
+  .panel h2 { margin:0 0 8px; font-size:14px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .hint { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; padding:6px; border-bottom:1px solid var(--line); }
+  td { padding:7px 6px; border-bottom:1px solid #20242d; }
+  tr.me td { background:#15202b; }
+  .pos { display:inline-block; min-width:34px; text-align:center; font-weight:800; font-size:12px; padding:2px 6px; border-radius:5px; color:#0f1115; }
+  .pos.RB{background:var(--RB)} .pos.WR{background:var(--WR)} .pos.QB{background:var(--QB)} .pos.TE{background:var(--TE)} .pos.K,.pos.DST{background:var(--K)}
+  .big { font-size:28px; font-weight:800; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; } @media (max-width:900px){ .grid2{grid-template-columns:1fr;} }
+  .grid3 { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:12px; }
+  .alert { padding:8px 12px; border-radius:8px; margin:6px 0; border-left:4px solid var(--muted); background:#12161d; }
+  .alert.bad { border-color:var(--bad); } .alert.warn { border-color:var(--warn); } .alert.ok { border-color:var(--good); } .alert.info { border-color:var(--me); }
+  .bar { height:14px; background:#2a2f3a; border-radius:7px; overflow:hidden; margin:6px 0; }
+  .bar > div { height:100%; background:var(--accent); }
+  .grade { font-weight:700; } .gA{color:var(--good)} .gB{color:#9ae6b4} .gC{color:var(--warn)} .gD,.gF{color:var(--bad)}
+  .lock { color:var(--warn); font-weight:700; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:#12161d; font-size:13px; }
+  .card h3 { margin:0 0 6px; font-size:14px; }
+  .card.me { border-color:var(--me); }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#262b36; border:1px solid var(--line); padding:10px 16px; border-radius:8px; display:none; z-index:30; }
+  .kv { display:flex; gap:24px; flex-wrap:wrap; } .kv div span { display:block; color:var(--muted); font-size:12px; text-transform:uppercase; }
+  .kv div b { font-size:22px; }
+  .muted { color:var(--muted); }
+  textarea { width:100%; min-height:140px; font-family:ui-monospace, Menlo, monospace; font-size:12px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RIP EVAN LU · Season Dashboard</h1>
+  <label class="muted">Week <select id="week"></select></label>
+  <span class="muted" id="meta"></span>
+  <div class="spacer"></div>
+  <button id="refresh" title="Re-download the latest expert rankings">⟳ Refresh rankings</button>
+</header>
+<div class="tabs" id="tabs">
+  <button data-t="lineup" class="on">Lineup</button><button data-t="matchup">My matchup</button><button data-t="predict">Predictions</button>
+  <button data-t="power">Power rankings</button><button data-t="waivers">Waivers</button><button data-t="rosters">Rosters</button><button data-t="manage">Manage</button>
+</div>
+<main id="main"><p class="hint">Loading…</p></main>
+<div class="toast" id="toast"></div>
+<script>
+const $ = s => document.querySelector(s);
+let D = null, TAB = 'lineup', WEEK = null;
+const posTag = p => `<span class="pos ${p}">${p}</span>`;
+const pct = x => `${Math.round(x*100)}%`;
+const grade = g => g ? `<span class="grade g${g[0]}">${g}</span>` : '';
+function toast(m){ const t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none',3000); }
+async function api(path, body){ const r = await fetch(path, body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}); const j = await r.json(); if(j.error){toast(j.error);} return j; }
+async function load(refresh){ $('#main').innerHTML='<p class="hint">Loading expert rankings…</p>'; D = await api(`/api/week?${WEEK?`week=${WEEK}&`:''}${refresh?'refresh=1':''}`); if(!D||D.error) return; WEEK=D.week; render(); }
+function render(){
+  const sel=$('#week'); if(!sel.options.length){ for(let w=1;w<=17;w++){const o=document.createElement('option');o.value=w;o.textContent=w;sel.appendChild(o);} }
+  sel.value=D.week; $('#meta').textContent=`rankings from ${D.scraped} · generated ${D.generated}`;
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on', b.dataset.t===TAB));
+  const f = {lineup, matchup, predict, power, waivers, rosters, manage}[TAB]; $('#main').innerHTML = f();
+  wire();
+}
+function playerRow(p, showSlot){ return `<tr><td>${showSlot?`<b>${p.slot}</b>`:''}</td><td>${posTag(p.pos)} <b>${p.player}</b> <span class="muted">${p.team}</span></td><td>${p.opp}</td><td>${p.when}${p.bye?' <span class="lock">BYE</span>':''}</td><td><b>${p.proj.toFixed(1)}</b></td><td>${grade(p.grade)}</td><td class="muted">${p.ecr??''}</td>${D.has_actuals?`<td>${p.actual??''}</td>`:''}</tr>`; }
+function lineup(){
+  const L = D.lineup, B = D.bench;
+  return `<div class="panel"><h2>1 · Set this lineup in ESPN — Week ${D.week}</h2>
+    <p class="hint">Make your ESPN starters match this table. Everyone else goes to the bench. <span class="lock">First lock: ${D.first_lock}</span></p>
+    <table><thead><tr><th>Slot</th><th>Player</th><th>Opp</th><th>Game</th><th>Proj</th><th>Grade</th><th>Expert rank</th>${D.has_actuals?'<th>Actual</th>':''}</tr></thead>
+    <tbody>${L.map(p=>p.player?playerRow(p,true):`<tr><td><b>${p.slot}</b></td><td colspan="6" class="lock">EMPTY — nobody eligible. Pick someone up.</td></tr>`).join('')}</tbody></table>
+    <p style="margin:10px 0 0"><b>Projected total: ${D.mean}</b> <span class="muted">(± about ${D.sd})</span></p></div>
+  <div class="panel"><h2>2 · Alerts</h2>${D.alerts.map(a=>`<div class="alert ${a.level}">${a.text}</div>`).join('')}</div>
+  ${D.close_calls.length?`<div class="panel"><h2>Close calls</h2><p class="hint">These are within 1.5 projected points. Either choice is fine. ${D.win_prob!=null?(D.win_prob<0.42?'You are the underdog this week, so lean toward the boom-or-bust option.':D.win_prob>0.58?'You are the favorite, so lean toward the steadier option.':''):''}</p>
+    ${D.close_calls.map(c=>`<div class="alert info">${c.slot}: <b>${c.starter}</b> (${c.starter_proj}) over ${c.bench} (${c.bench_proj})</div>`).join('')}</div>`:''}
+  <div class="panel"><h2>Bench</h2><table><thead><tr><th></th><th>Player</th><th>Opp</th><th>Game</th><th>Proj</th><th>Grade</th><th>Expert rank</th>${D.has_actuals?'<th>Actual</th>':''}</tr></thead><tbody>${B.map(p=>playerRow(p,false)).join('')}</tbody></table></div>`;
+}
+function matchup(){
+  if(!D.opp) return `<div class="panel"><p class="hint">No opponent on file for week ${D.week}. Add the schedule in the Manage tab.</p></div>`;
+  const wp = D.win_prob;
+  const side = (title, lu, mean, me) => `<div class="panel ${me?'me':''}"><h2>${title}</h2><div class="big">${mean}</div><table><tbody>${lu.map(p=>p.player?`<tr><td><b>${p.slot}</b></td><td>${posTag(p.pos)} ${p.player}</td><td class="muted">${p.opp} ${p.when}</td><td><b>${p.proj.toFixed(1)}</b></td>${D.has_actuals?`<td>${p.actual??''}</td>`:''}</tr>`:'').join('')}</tbody></table></div>`;
+  return `<div class="panel"><h2>Week ${D.week}: ${D.me} vs ${D.opp}</h2>
+    <div class="kv"><div><span>Your win probability</span><b>${pct(wp)}</b></div><div><span>Projected</span><b>${D.mean} – ${D.opp_mean}</b></div><div><span>Verdict</span><b>${wp>0.58?'Favorite':wp<0.42?'Underdog':'Toss-up'}</b></div></div>
+    <div class="bar"><div style="width:${wp*100}%"></div></div>
+    <p class="hint">Win probability assumes each lineup's score is roughly normal with the weekly swing of its players. ${wp<0.42?'As the underdog, prefer volatile players in close calls.':wp>0.58?'As the favorite, prefer consistent players in close calls.':'Close calls: pick either.'}</p></div>
+    <div class="grid2">${side(D.me+' (you)', D.lineup, D.mean, true)}${side(D.opp, D.opp_lineup, D.opp_mean, false)}</div>`;
+}
+function predict(){
+  if(!D.predictions.length) return `<div class="panel"><p class="hint">No matchups on file for week ${D.week}. Paste the ESPN schedule in the Manage tab.</p></div>`;
+  return `<div class="panel"><h2>Week ${D.week} predictions</h2><table><thead><tr><th>Matchup</th><th>Proj</th><th>Proj</th><th>Favorite</th><th>Win %</th>${D.has_actuals?'<th>Actual</th>':''}</tr></thead><tbody>
+    ${D.predictions.map(p=>{const fav=p.a_wp>=0.5?p.a:p.b; const me=[p.a,p.b].includes(D.me); return `<tr class="${me?'me':''}"><td><b>${p.a}</b> vs <b>${p.b}</b></td><td>${p.a_proj}</td><td>${p.b_proj}</td><td><b>${fav}</b></td><td>${pct(Math.max(p.a_wp,1-p.a_wp))}</td>${D.has_actuals?`<td>${p.a_actual??''} – ${p.b_actual??''}</td>`:''}</tr>`}).join('')}</tbody></table>
+    <p class="hint">Weeks with matchups on file: ${D.weeks_with_matchups.join(', ')||'none'}.</p></div>`;
+}
+function power(){
+  return `<div class="panel"><h2>Power rankings</h2><p class="hint"><b>Season strength</b>: projected season points of each team's best starters (QB, 2 RB, 2 WR, TE). <b>Depth</b>: value of their 5th–9th best RB/WR, the injury insurance. <b>This week</b>: projected points of this week's best lineup.</p>
+    <table><thead><tr><th>#</th><th>Team</th><th>Manager</th><th>Season strength</th><th>Depth</th><th>This week</th></tr></thead><tbody>
+    ${D.power.map(p=>`<tr class="${p.team===D.me?'me':''}"><td>${p.rank}</td><td><b>${p.team}</b></td><td class="muted">${p.manager}</td><td>${p.season}</td><td>${p.depth}</td><td>${p.week}</td></tr>`).join('')}</tbody></table>
+    <p class="hint">Strongest: <b>${D.power[0].team}</b>. Weakest: <b>${D.power[D.power.length-1].team}</b>. You: <b>#${D.power.find(p=>p.team===D.me).rank}</b> by starters, <b>#${[...D.power].sort((a,b)=>b.depth-a.depth).findIndex(p=>p.team===D.me)+1}</b> by depth.</p></div>`;
+}
+function waivers(){
+  return `<div class="panel"><h2>Waiver targets — unrostered players worth a look</h2><p class="hint">Ranked by season value. "Drop" is your weakest player at that position; "Gain" is the season value you'd add. Only bother when Gain is clearly positive. After you make a move in ESPN, record it in the Manage tab.</p>
+    <table><thead><tr><th>Player</th><th>Pos</th><th>Team</th><th>Season value</th><th>This week</th><th>You'd drop</th><th>Gain</th></tr></thead><tbody>
+    ${D.waivers.map(w=>`<tr><td><b>${w.player}</b></td><td>${posTag(w.pos)}</td><td class="muted">${w.team}</td><td>${w.season_vbd}</td><td>${w.week_proj}</td><td class="muted">${w.drop||''}</td><td class="${w.worth_it?'grade gA':'muted'}">${w.gain>0?'+':''}${w.gain}${w.worth_it?' ✔':''}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function rosters(){
+  return `<div class="grid3">${Object.entries(D.teams).map(([t,T])=>`<div class="card ${t===D.me?'me':''}"><h3>${t} <span class="muted">${T.manager}</span></h3><div class="muted">this week ${T.mean}${T.actual!=null?` · actual ${T.actual}`:''}</div>
+    ${['QB','RB','WR','TE','K','DST'].map(pos=>{const ps=T.players.filter(p=>p.pos===pos); return ps.length?`<div style="margin-top:4px">${posTag(pos)} ${ps.map(p=>p.player).join(', ')}</div>`:''}).join('')}</div>`).join('')}</div>`;
+}
+function manage(){
+  const teams = Object.keys(D.teams);
+  return `<div class="panel"><h2>Record an add / drop</h2><p class="hint">After any roster move in ESPN (yours or another team's), record it here so the rankings and waiver list stay right.</p>
+    <div class="row"><select id="tx-team">${teams.map(t=>`<option ${t===D.me?'selected':''}>${t}</option>`).join('')}</select>
+      <input id="tx-drop" placeholder="Drop (exact name, optional)"> <input id="tx-add" placeholder="Add (name)"> <select id="tx-pos"><option>WR</option><option>RB</option><option>QB</option><option>TE</option><option>K</option><option>DST</option></select>
+      <button class="primary" id="tx-go">Save</button></div></div>
+  <div class="panel"><h2>Fantasy schedule</h2><p class="hint">Weeks on file: ${D.weeks_with_matchups.join(', ')||'none'}. Open ESPN → League → Schedule, select all, copy, and paste the whole page here. I'll pull out the matchups.</p>
+    <textarea id="sched"></textarea><div class="row" style="margin-top:8px"><button class="primary" id="sched-go">Parse schedule</button><span class="muted" id="sched-out"></span></div></div>`;
+}
+function wire(){
+  const go=$('#tx-go'); if(go) go.onclick=async()=>{ const j=await api('/api/transaction',{team:$('#tx-team').value, drop:$('#tx-drop').value.trim(), add:$('#tx-add').value.trim(), add_pos:$('#tx-pos').value}); if(j.ok){toast('Saved'); load(false);} };
+  const sg=$('#sched-go'); if(sg) sg.onclick=async()=>{ const j=await api('/api/schedule',{paste:$('#sched').value}); if(j.ok){ $('#sched-out').textContent=`Parsed weeks: ${j.weeks_parsed.join(', ')||'none found'}`; toast('Schedule saved'); } };
+}
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{TAB=b.dataset.t; render();});
+$('#week').onchange=e=>{WEEK=+e.target.value; load(false);};
+$('#refresh').onclick=()=>load(true);
+load(false);
+</script>
+</body>
+</html>
