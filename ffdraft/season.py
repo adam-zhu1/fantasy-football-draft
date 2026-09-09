@@ -211,14 +211,24 @@ def compute(week=None, force=False):
         for q in me["bench"]:
             if q["pos"] in (FLEX_POS if p["slot"] == "FLEX" else {p["slot"]}) and q["proj"] > 0 and q["proj"] >= p["proj"] - 1.5:
                 close.append({"slot": p["slot"], "starter": p["player"], "starter_proj": p["proj"], "bench": q["player"], "bench_proj": q["proj"]})
-    alerts = []
+    # alerts: only things that need action. Analyst start/sit opinions and notes go in their own list.
+    alerts, advice = [], []
+    starting = {p["key"] for p in me["lineup"] if p.get("player")}
     for p in me["players"]:
-        if p["bye"]: alerts.append({"level": "bad", "text": f"{p['player']} ({p['pos']}) has no game this week. Keep him on the bench."})
-        elif not p["ranked"]: alerts.append({"level": "warn", "text": f"{p['player']} ({p['pos']}) is missing from this week's expert rankings. Usually means injured or buried on the depth chart. Check ESPN."})
-        if p["tag"] or p["note"]: alerts.append({"level": "info", "text": f"{p['player']}: {(p['tag'] + ' ' + p['note']).strip()}"})
-    starters_with_alert = {p["key"] for p in me["lineup"] if p.get("player") and (p["bye"] or not p["ranked"])}
-    if starters_with_alert: alerts.insert(0, {"level": "bad", "text": "A recommended starter has a problem above. Re-check before lock."})
-    if not alerts: alerts.append({"level": "ok", "text": "No byes, nobody missing from the rankings. Glance at ESPN's injury tags (Q / D / O) Sunday morning."})
+        if p["bye"]:
+            alerts.append({"level": "bad" if p["key"] in starting else "warn",
+                           "text": f"{p['player']} ({p['pos']}) has no game this week." + (" HE IS IN YOUR LINEUP — bench him." if p["key"] in starting else " Keep him benched.")})
+        elif not p["ranked"]:
+            alerts.append({"level": "bad" if p["key"] in starting else "warn",
+                           "text": f"{p['player']} ({p['pos']}) is missing from this week's expert rankings, which usually means injured or benched." + (" HE IS IN YOUR LINEUP — check ESPN before kickoff." if p["key"] in starting else "")})
+        tag = (p["tag"] or "").strip().lower()
+        if tag in ("start", "sit") or p["note"]:
+            conflict = (tag == "sit" and p["key"] in starting) or (tag == "start" and p["key"] not in starting)
+            advice.append({"player": p["player"], "pos": p["pos"], "starting": p["key"] in starting, "tag": tag,
+                           "conflict": bool(conflict and tag), "proj": p["proj"], "note": p["note"]})
+    if not alerts:
+        alerts.append({"level": "ok", "text": "No byes, nobody missing from the rankings. Check ESPN's injury tags (Q / D / O) before each game locks."})
+    advice.sort(key=lambda a: (not a["conflict"], not a["starting"], -a["proj"]))
 
     preds = []
     for a, bb in matchups.get(week, []):
@@ -247,7 +257,7 @@ def compute(week=None, force=False):
         "me": me_name, "opp": opp_name, "lineup": me["lineup"], "bench": me["bench"], "mean": me["mean"], "sd": me["sd"],
         "opp_lineup": (opp["lineup"] if opp else []), "opp_mean": (opp["mean"] if opp else None),
         "win_prob": (round(win_prob(me["mean"], me["sd"], opp["mean"], opp["sd"]), 3) if opp else None),
-        "close_calls": close, "alerts": alerts, "first_lock": first_lock,
+        "close_calls": close, "alerts": alerts, "advice": advice, "first_lock": first_lock,
         "predictions": preds, "power": power, "waivers": waivers,
         "teams": {t: {"manager": T["manager"], "players": T["players"], "mean": T["mean"], "actual": T["actual"]} for t, T in teams.items()},
         "weeks_with_matchups": sorted(matchups.keys()), "has_actuals": bool(actual),

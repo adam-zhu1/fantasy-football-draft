@@ -36,6 +36,9 @@
   .bar > div { height:100%; background:var(--accent); }
   .grade { font-weight:700; } .gA{color:var(--good)} .gB{color:#9ae6b4} .gC{color:var(--warn)} .gD,.gF{color:var(--bad)}
   .lock { color:var(--warn); font-weight:700; }
+  tr.conflict td { background:#2a1a1a; }
+  tr.clickable { cursor:pointer; } tr.clickable:hover td { background:#1d2430; }
+  .why { background:#11151c; border-left:3px solid var(--accent); padding:8px 12px; border-radius:6px; font-size:13px; line-height:1.5; }
   .card { border:1px solid var(--line); border-radius:10px; padding:10px 12px; background:#12161d; font-size:13px; }
   .card h3 { margin:0 0 6px; font-size:14px; }
   .card.me { border-color:var(--me); }
@@ -63,7 +66,7 @@
 <div class="toast" id="toast"></div>
 <script>
 const $ = s => document.querySelector(s);
-let D = null, TAB = 'lineup', WEEK = null;
+let D = null, TAB = 'lineup', WEEK = null, ADV = null;
 const posTag = p => `<span class="pos ${p}">${p}</span>`;
 const pct = x => `${Math.round(x*100)}%`;
 const grade = g => g ? `<span class="grade g${g[0]}">${g}</span>` : '';
@@ -86,9 +89,14 @@ function lineup(){
     <tbody>${L.map(p=>p.player?playerRow(p,true):`<tr><td><b>${p.slot}</b></td><td colspan="6" class="lock">EMPTY — nobody eligible. Pick someone up.</td></tr>`).join('')}</tbody></table>
     <p style="margin:10px 0 0"><b>Projected total: ${D.mean}</b> <span class="muted">(± about ${D.sd})</span></p></div>
   <div class="panel"><h2>2 · Alerts</h2>${D.alerts.map(a=>`<div class="alert ${a.level}">${a.text}</div>`).join('')}</div>
+  ${(D.advice||[]).length?`<div class="panel"><h2>3 · What the analysts say about your players</h2>
+    <p class="hint">FantasyPros' weekly writeups. <b>Start</b> / <b>sit</b> is their call for this week. A red row means their call disagrees with your lineup — worth a read, not an order. Click a name for the full note.</p>
+    <table><thead><tr><th>Player</th><th>In lineup?</th><th>Their call</th><th>Proj</th></tr></thead><tbody>
+    ${D.advice.map((a,i)=>`<tr class="clickable ${a.conflict?'conflict':''}" data-adv="${i}"><td>${posTag(a.pos)} <b>${a.player}</b></td><td>${a.starting?'starting':'bench'}</td><td>${a.tag?`<b class="${a.tag==='start'?'grade gA':'grade gC'}">${a.tag}</b>`:'<span class="muted">no call</span>'}</td><td>${a.proj.toFixed(1)}</td></tr>
+      ${ADV===i?`<tr><td colspan="4"><div class="why">${a.note||'No note.'}</div></td></tr>`:''}`).join('')}</tbody></table></div>`:''}
   ${D.close_calls.length?`<div class="panel"><h2>Close calls</h2><p class="hint">These are within 1.5 projected points. Either choice is fine. ${D.win_prob!=null?(D.win_prob<0.42?'You are the underdog this week, so lean toward the boom-or-bust option.':D.win_prob>0.58?'You are the favorite, so lean toward the steadier option.':''):''}</p>
     ${D.close_calls.map(c=>`<div class="alert info">${c.slot}: <b>${c.starter}</b> (${c.starter_proj}) over ${c.bench} (${c.bench_proj})</div>`).join('')}</div>`:''}
-  <div class="panel"><h2>Bench</h2><table><thead><tr><th></th><th>Player</th><th>Opp</th><th>Game</th><th>Proj</th><th>Grade</th><th>Expert rank</th>${D.has_actuals?'<th>Actual</th>':''}</tr></thead><tbody>${B.map(p=>playerRow(p,false)).join('')}</tbody></table></div>`;
+  <div class="panel"><h2>Your bench</h2><table><thead><tr><th></th><th>Player</th><th>Opp</th><th>Game</th><th>Proj</th><th>Grade</th><th>Expert rank</th>${D.has_actuals?'<th>Actual</th>':''}</tr></thead><tbody>${B.map(p=>playerRow(p,false)).join('')}</tbody></table></div>`;
 }
 function matchup(){
   if(!D.opp) return `<div class="panel"><p class="hint">No opponent on file for week ${D.week}. Add the schedule in the Manage tab.</p></div>`;
@@ -139,6 +147,7 @@ function manage(){
     <textarea id="sched"></textarea><div class="row" style="margin-top:8px"><button class="primary" id="sched-go">Parse schedule</button><span class="muted" id="sched-out"></span></div></div>`;
 }
 function wire(){
+  document.querySelectorAll('tr[data-adv]').forEach(tr=>tr.onclick=()=>{ADV = ADV===+tr.dataset.adv?null:+tr.dataset.adv; render();});
   const go=$('#tx-go'); if(go) go.onclick=async()=>{ const j=await api('/api/transaction',{team:$('#tx-team').value, drop:$('#tx-drop').value.trim(), add:$('#tx-add').value.trim(), add_pos:$('#tx-pos').value}); if(j.ok){toast('Saved'); load(false);} };
   const sg=$('#sched-go'); if(sg) sg.onclick=async()=>{ const j=await api('/api/schedule',{paste:$('#sched').value}); if(j.ok){ $('#sched-out').textContent=`Parsed weeks: ${j.weeks_parsed.join(', ')||'none found'}`; toast('Schedule saved'); } };
 }
