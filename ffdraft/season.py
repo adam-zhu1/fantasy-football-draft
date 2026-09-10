@@ -14,6 +14,9 @@ S = load_settings()
 LINEUP = [("QB", 1), ("RB", 2), ("WR", 2), ("TE", 1), ("FLEX", 1), ("DST", 1), ("K", 1)]
 FLEX_POS = {"RB", "WR", "TE"}
 WEEKLY_SD = {"QB": 7.5, "RB": 7.5, "WR": 8.0, "TE": 6.0, "K": 4.0, "DST": 6.0}
+# ESPN scores kickers and defenses, but settings.json carries no rules for them, so their box
+# scores can't be recomputed. Mark them unknown rather than silently scoring them zero.
+UNSCORED = {"K", "DST"}
 ROSTERS_FILE = DATA / "league_rosters.json"
 SCHED_FILE = DATA / "league_schedule.json"
 _CACHE = {}
@@ -73,6 +76,12 @@ def infer_week(sch):
         if today <= pd.to_datetime(g["gameday"]).max().date():
             return int(w)
     return int(sch["week"].max())
+
+
+def finished_teams(sch, week):
+    """NFL teams whose week-N game is over, so their players' scores are locked in."""
+    g = sch[(sch["week"] == week) & sch["result"].notna()]
+    return set(g["home_team"]) | set(g["away_team"])
 
 
 def team_games(sch, week):
@@ -154,7 +163,7 @@ def player_row(name, pos, rk, b, games, week, actual):
         "season_proj": (round(float(b.loc[k, "proj_pts"]), 1) if k in b.index else 0.0),
         "season_vbd": (round(float(b.loc[k, "vbd"]), 1) if k in b.index else -50.0),
         "bye": bool(on_bye), "ranked": r is not None,
-        "actual": (round(actual[k], 1) if k in actual else None),
+        "actual": (round(actual[k], 1) if k in actual and pos not in UNSCORED else None),
     }
 
 
@@ -173,6 +182,26 @@ def best_lineup(players):
     return lineup, bench, round(mean, 1), math.sqrt(var)
 
 
+def live_totals(lineup, done):
+    """Score a partly-played week: actual points where the game is over, projection where it isn't."""
+    banked = left = var = 0.0
+    unknown = []
+    for p in lineup:
+        if not p.get("player"):
+            continue
+        if p.get("team") in done:
+            if p["actual"] is None:      # K/DST — no recomputable box score, so lean on the projection
+                banked += p["proj"]; unknown.append(p["player"])
+            else:
+                banked += p["actual"]
+        else:
+            left += p["proj"]
+            if p["proj"] > 0:
+                var += WEEKLY_SD.get(p["pos"], 7) ** 2
+    return {"banked": round(banked, 1), "mean": round(banked + left, 1), "sd": math.sqrt(var),
+            "unknown": unknown, "left": sum(1 for p in lineup if p.get("player") and p.get("team") not in done)}
+
+
 def win_prob(m1, s1, m2, s2):
     return 0.5 * (1 + math.erf((m1 - m2) / math.sqrt(s1 ** 2 + s2 ** 2) / math.sqrt(2)))
 
@@ -183,6 +212,7 @@ def compute(week=None, force=False):
     sch = nfl_schedule()
     week = week or infer_week(sch)
     games = team_games(sch, week)
+    done = finished_teams(sch, week)
     L = load_rosters(); my_full = L["my_team"]; me_name = short(my_full)
     matchups = load_matchups()
     b = board()
@@ -193,12 +223,14 @@ def compute(week=None, force=False):
         t = short(full)
         players = [player_row(p, pos, rk, b, games, week, actual) for pos, ps in byp.items() for p in ps]
         lineup, bench, mean, sd = best_lineup(players)
+        live = live_totals(lineup, done)
         def top(pos, n): return sum(sorted([p["season_proj"] for p in players if p["pos"] == pos], reverse=True)[:n])
         season = top("QB", 1) + top("RB", 2) + top("WR", 2) + top("TE", 1)
         depth = sum(sorted([p["season_vbd"] for p in players if p["pos"] in ("RB", "WR")], reverse=True)[4:9])
         act = sum(p["actual"] or 0 for p in lineup if p.get("player")) if actual else None
         teams[t] = {"name": t, "manager": full[full.find("(") + 1:-1] if "(" in full else "", "players": players, "lineup": lineup,
-                    "bench": bench, "mean": mean, "sd": round(sd, 1), "season": round(season), "depth": round(depth), "actual": (round(act, 1) if act is not None else None)}
+                    "bench": bench, "mean": mean, "sd": round(sd, 1), "season": round(season), "depth": round(depth), "actual": (round(act, 1) if act is not None else None),
+                    "banked": live["banked"], "live_mean": live["mean"], "live_sd": round(live["sd"], 1), "left": live["left"], "unknown": live["unknown"]}
 
     me = teams[me_name]
     opp_name = next((bb if a == me_name else a for a, bb in matchups.get(week, []) if me_name in (a, bb)), None)
@@ -233,8 +265,9 @@ def compute(week=None, force=False):
     preds = []
     for a, bb in matchups.get(week, []):
         if a not in teams or bb not in teams: continue
-        A, B = teams[a], teams[bb]; wp = win_prob(A["mean"], A["sd"], B["mean"], B["sd"])
-        preds.append({"a": a, "b": bb, "a_proj": A["mean"], "b_proj": B["mean"], "a_wp": round(wp, 3), "a_actual": A["actual"], "b_actual": B["actual"]})
+        A, B = teams[a], teams[bb]; wp = win_prob(A["live_mean"], A["live_sd"], B["live_mean"], B["live_sd"])
+        preds.append({"a": a, "b": bb, "a_proj": A["live_mean"], "b_proj": B["live_mean"], "a_wp": round(wp, 3),
+                      "a_actual": A["actual"], "b_actual": B["actual"], "a_banked": A["banked"], "b_banked": B["banked"], "left": max(A["left"], B["left"])})
 
     power = sorted(({"team": t, "manager": T["manager"], "season": T["season"], "depth": T["depth"], "week": T["mean"]} for t, T in teams.items()), key=lambda x: -x["season"])
     for i, p in enumerate(power, 1): p["rank"] = i
@@ -256,10 +289,14 @@ def compute(week=None, force=False):
         "week": week, "scraped": scraped, "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "me": me_name, "opp": opp_name, "lineup": me["lineup"], "bench": me["bench"], "mean": me["mean"], "sd": me["sd"],
         "opp_lineup": (opp["lineup"] if opp else []), "opp_mean": (opp["mean"] if opp else None),
-        "win_prob": (round(win_prob(me["mean"], me["sd"], opp["mean"], opp["sd"]), 3) if opp else None),
+        "win_prob": (round(win_prob(me["live_mean"], me["live_sd"], opp["live_mean"], opp["live_sd"]), 3) if opp else None),
+        "banked": me["banked"], "live_mean": me["live_mean"], "left": me["left"], "unknown": me["unknown"],
+        "opp_banked": (opp["banked"] if opp else None), "opp_live_mean": (opp["live_mean"] if opp else None),
+        "in_progress": bool(done) and me["left"] > 0,
         "close_calls": close, "alerts": alerts, "advice": advice, "first_lock": first_lock,
         "predictions": preds, "power": power, "waivers": waivers,
-        "teams": {t: {"manager": T["manager"], "players": T["players"], "mean": T["mean"], "actual": T["actual"]} for t, T in teams.items()},
+        "teams": {t: {"manager": T["manager"], "players": T["players"], "mean": T["mean"], "actual": T["actual"],
+                      "banked": T["banked"], "live_mean": T["live_mean"], "left": T["left"]} for t, T in teams.items()},
         "weeks_with_matchups": sorted(matchups.keys()), "has_actuals": bool(actual),
     }
 
@@ -295,15 +332,26 @@ def season_outlook(teams, matchups, from_week, n=4000, seed=7):
 def render_markdown(d):
     o = []; P = o.append
     P(f"# Week {d['week']} report — {S.get('league_name', '')}\n\nExpert rankings scraped {d['scraped']}.\n")
-    P("## Lineup\n\n| Slot | Start | Opp | Game | Proj | Grade |\n|---|---|---|---|---|---|")
+    P("## Lineup\n\n| Slot | Start | Opp | Game | Proj | Actual | Grade |\n|---|---|---|---|---|---|---|")
     for p in d["lineup"]:
-        P(f"| {p['slot']} | {p['player'] or 'EMPTY'} | {p.get('opp','')} | {p.get('when','')} | {p.get('proj','')} | {p.get('grade','')} |")
-    P(f"\nProjected {d['mean']}. Earliest lock {d['first_lock']}.\n\n## Alerts\n")
+        act = "—" if p.get("actual") is None else p["actual"]
+        if p.get("player") and p.get("actual") is None and p.get("player") in d["unknown"]: act = "? (played)"
+        P(f"| {p['slot']} | {p['player'] or 'EMPTY'} | {p.get('opp','')} | {p.get('when','')} | {p.get('proj','')} | {act} | {p.get('grade','')} |")
+    if d["in_progress"]:
+        P(f"\n**Live: {d['banked']} on the board, {d['left']} starters left to play.** Full-week projection {d['live_mean']}.")
+    P(f"\nPre-game projection {d['mean']}. Earliest lock {d['first_lock']}.\n\n## Alerts\n")
     for a in d["alerts"]: P(f"- {a['text']}")
-    if d["opp"]: P(f"\n## Matchup\n\nvs {d['opp']}: {d['mean']} to {d['opp_mean']}, win probability {d['win_prob']:.0%}.\n")
-    P("## Predictions\n\n| Matchup | Proj | Proj | Favorite | Win % |\n|---|---|---|---|---|")
+    if d["opp"]:
+        P("\n## Matchup\n")
+        if d["in_progress"]:
+            P(f"vs {d['opp']}: **{d['banked']} to {d['opp_banked']}** right now. "
+              f"Projected final {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.\n")
+        else:
+            P(f"vs {d['opp']}: {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.\n")
+    P("## Predictions\n\n| Matchup | Now | Now | Proj | Proj | Favorite | Win % |\n|---|---|---|---|---|---|---|")
     for p in d["predictions"]:
-        fav = p["a"] if p["a_wp"] >= 0.5 else p["b"]; P(f"| {p['a']} vs {p['b']} | {p['a_proj']} | {p['b_proj']} | {fav} | {max(p['a_wp'], 1-p['a_wp']):.0%} |")
+        fav = p["a"] if p["a_wp"] >= 0.5 else p["b"]
+        P(f"| {p['a']} vs {p['b']} | {p['a_banked']} | {p['b_banked']} | {p['a_proj']} | {p['b_proj']} | {fav} | {max(p['a_wp'], 1-p['a_wp']):.0%} |")
     P("\n## Power rankings\n\n| # | Team | Season | Depth | This week |\n|---|---|---|---|---|")
     for p in d["power"]: P(f"| {p['rank']} | {p['team']} | {p['season']} | {p['depth']} | {p['week']} |")
     P("\n## Waiver targets\n\n| Player | Pos | Season value | This week | Drop | Gain |\n|---|---|---|---|---|---|")
