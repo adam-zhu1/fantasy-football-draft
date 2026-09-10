@@ -56,6 +56,11 @@ Tick "bot" on any slot with no manager. Fix a mis-attributed pick with the team 
 Prints the lineup to enter in ESPN (with lock times), alerts (byes, missing from rankings), your matchup win
 probability, predictions for every matchup, power rankings, and waiver targets. Uses FantasyPros weekly
 consensus via nflverse (refreshes daily), so re-run Saturday night or Sunday morning for the latest.
+
+Once games start it scores the week live: starters whose game is final count their actual points, the rest
+count their projection, and the win probability only carries variance for the players left to play. Scoring
+comes from `scoring_detail` / `kicking_detail` / `dst_detail` in settings.json, transcribed from ESPN's
+League > Settings > Scoring page — re-check them if the commissioner changes anything.
 Rosters live in data/league_rosters.json and matchups in data/league_schedule.json (both local-only).
 
 ### Season dashboard
