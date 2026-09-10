@@ -14,7 +14,8 @@
     "rec_yd": 0.1,
     "rec_td": 6,
     "fumble_lost": -2,
-    "two_pt": 2
+    "two_pt": 2,
+    "special_teams_td": 6
   },
   "roster_size": 16,
   "starting_lineup": {
@@ -38,5 +39,42 @@
   "min_wr": 6,
   "all_teams_human": true,
   "market_weight": 0.75,
-  "_market_weight_note": "0 = pure model, 1 = pure expert consensus rank. Expert column used where present, else consensus ADP."
+  "_market_weight_note": "0 = pure model, 1 = pure expert consensus rank. Expert column used where present, else consensus ADP.",
+  "kicking_detail": {
+    "pat": 1,
+    "fg_missed": -1,
+    "fg_0_39": 3,
+    "fg_40_49": 4,
+    "fg_50_59": 5,
+    "fg_60_plus": 6
+  },
+  "dst_detail": {
+    "sack": 1,
+    "interception": 2,
+    "fumble_recovery": 2,
+    "safety": 2,
+    "safety_1pt": 1,
+    "blocked_kick": 2,
+    "return_td": 6,
+    "two_pt_return": 2,
+    "points_allowed": [
+      [0, 0, 5],
+      [1, 6, 4],
+      [7, 13, 3],
+      [14, 17, 1],
+      [28, 34, -1],
+      [35, 45, -3],
+      [46, 999, -5]
+    ],
+    "yards_allowed": [
+      [0, 99, 5],
+      [100, 199, 3],
+      [200, 299, 2],
+      [350, 399, -1],
+      [400, 449, -3],
+      [450, 499, -5],
+      [500, 549, -6],
+      [550, 9999, -7]
+    ]
+  }
 }

@@ -14,9 +14,6 @@ S = load_settings()
 LINEUP = [("QB", 1), ("RB", 2), ("WR", 2), ("TE", 1), ("FLEX", 1), ("DST", 1), ("K", 1)]
 FLEX_POS = {"RB", "WR", "TE"}
 WEEKLY_SD = {"QB": 7.5, "RB": 7.5, "WR": 8.0, "TE": 6.0, "K": 4.0, "DST": 6.0}
-# ESPN scores kickers and defenses, but settings.json carries no rules for them, so their box
-# scores can't be recomputed. Mark them unknown rather than silently scoring them zero.
-UNSCORED = {"K", "DST"}
 ROSTERS_FILE = DATA / "league_rosters.json"
 SCHED_FILE = DATA / "league_schedule.json"
 _CACHE = {}
@@ -48,11 +45,34 @@ def nfl_schedule():
     return _CACHE["sch"]
 
 
+def dst_actuals(week, sch):
+    """League-scored points for every team defense in week N, keyed like a roster entry
+    ('Seattle Seahawks'). Points and yards allowed come from what the opposing offense did."""
+    import nflreadpy as nfl
+    from .scoring import dst_points_from_history
+    t = nfl.load_team_stats([S.get("season", 2026)]).to_pandas()
+    t = t[(t["week"] == week) & (t["season_type"] == "REG")].copy()
+    if t.empty:
+        return {}
+    t["team"] = t["team"].map(norm_team); t["opponent_team"] = t["opponent_team"].map(norm_team)
+    off = t.set_index("team")
+    t["yards_allowed"] = [off.loc[o, "passing_yards"] + off.loc[o, "rushing_yards"] if o in off.index else 0 for o in t["opponent_team"]]
+    g = sch[(sch["week"] == week) & sch["result"].notna()]
+    scored = {}
+    for _, r in g.iterrows():
+        scored[r["home_team"]] = r["home_score"]; scored[r["away_team"]] = r["away_score"]
+    t["points_allowed"] = [scored.get(o, 0) for o in t["opponent_team"]]
+    t["pts"] = dst_points_from_history(t, S.get("dst_detail", {}))
+    names = nfl.load_teams().to_pandas()
+    full = {norm_team(a): n for a, n in zip(names["team_abbr"], names["team_name"])}
+    return {norm_name(full[a]): float(p) for a, p in zip(t["team"], t["pts"]) if a in full}
+
+
 def actual_points(week):
     """Actual league-scored points by player key for a completed/in-progress week (empty before games)."""
     try:
         import nflreadpy as nfl, polars as pl
-        from .scoring import weekly_points_from_history
+        from .scoring import weekly_points_from_history, kicker_points_from_history
         ck = f"act{week}"
         if ck in _CACHE and time.time() - _CACHE[ck + "_t"] < 900:
             return _CACHE[ck]
@@ -61,9 +81,12 @@ def actual_points(week):
         if w.empty:
             out = {}
         else:
-            w["pts"] = weekly_points_from_history(w, S["scoring_detail"])
+            w["pts"] = (weekly_points_from_history(w, S["scoring_detail"])
+                        + kicker_points_from_history(w, S.get("kicking_detail", {}))
+                        + (w["special_teams_tds"].fillna(0) if "special_teams_tds" in w else 0) * S["scoring_detail"].get("special_teams_td", 6))
             w["key"] = w["player_display_name"].map(norm_name)
             out = w.groupby("key")["pts"].sum().to_dict()
+            out.update(dst_actuals(week, nfl_schedule()))
         _CACHE[ck] = out; _CACHE[ck + "_t"] = time.time()
         return out
     except Exception:
@@ -163,7 +186,7 @@ def player_row(name, pos, rk, b, games, week, actual):
         "season_proj": (round(float(b.loc[k, "proj_pts"]), 1) if k in b.index else 0.0),
         "season_vbd": (round(float(b.loc[k, "vbd"]), 1) if k in b.index else -50.0),
         "bye": bool(on_bye), "ranked": r is not None,
-        "actual": (round(actual[k], 1) if k in actual and pos not in UNSCORED else None),
+        "actual": (round(actual[k], 1) if k in actual else None),
     }
 
 
