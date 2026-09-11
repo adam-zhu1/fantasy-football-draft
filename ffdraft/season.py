@@ -290,7 +290,8 @@ def compute(week=None, force=False):
         if a not in teams or bb not in teams: continue
         A, B = teams[a], teams[bb]; wp = win_prob(A["live_mean"], A["live_sd"], B["live_mean"], B["live_sd"])
         preds.append({"a": a, "b": bb, "a_proj": A["live_mean"], "b_proj": B["live_mean"], "a_wp": round(wp, 3),
-                      "a_actual": A["actual"], "b_actual": B["actual"], "a_banked": A["banked"], "b_banked": B["banked"], "left": max(A["left"], B["left"])})
+                      "a_actual": A["actual"], "b_actual": B["actual"], "a_banked": A["banked"], "b_banked": B["banked"],
+                      "left": max(A["left"], B["left"]), "a_est": len(A["unknown"]), "b_est": len(B["unknown"])})
 
     power = sorted(({"team": t, "manager": T["manager"], "season": T["season"], "depth": T["depth"], "week": T["mean"]} for t, T in teams.items()), key=lambda x: -x["season"])
     for i, p in enumerate(power, 1): p["rank"] = i
@@ -374,7 +375,10 @@ def render_markdown(d):
     P("## Predictions\n\n| Matchup | Now | Now | Proj | Proj | Favorite | Win % |\n|---|---|---|---|---|---|---|")
     for p in d["predictions"]:
         fav = p["a"] if p["a_wp"] >= 0.5 else p["b"]
-        P(f"| {p['a']} vs {p['b']} | {p['a_banked']} | {p['b_banked']} | {p['a_proj']} | {p['b_proj']} | {fav} | {max(p['a_wp'], 1-p['a_wp']):.0%} |")
+        est = lambda v, n: f"{v}*" if n else f"{v}"
+        P(f"| {p['a']} vs {p['b']} | {est(p['a_banked'], p['a_est'])} | {est(p['b_banked'], p['b_est'])} | {p['a_proj']} | {p['b_proj']} | {fav} | {max(p['a_wp'], 1-p['a_wp']):.0%} |")
+    if any(p["a_est"] or p["b_est"] for p in d["predictions"]):
+        P("\n\\* includes a player whose game is over but whose box score nflverse hasn't published yet — still an estimate.")
     P("\n## Power rankings\n\n| # | Team | Season | Depth | This week |\n|---|---|---|---|---|")
     for p in d["power"]: P(f"| {p['rank']} | {p['team']} | {p['season']} | {p['depth']} | {p['week']} |")
     P("\n## Waiver targets\n\n| Player | Pos | Season value | This week | Drop | Gain |\n|---|---|---|---|---|---|")
