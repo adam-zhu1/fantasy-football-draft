@@ -205,24 +205,60 @@ def best_lineup(players):
     return lineup, bench, round(mean, 1), math.sqrt(var)
 
 
-def live_totals(lineup, done):
-    """Score a partly-played week: actual points where the game is over, projection where it isn't."""
+def live_totals(lineup, left_frac, covered=()):
+    """Score a partly-played week.
+
+    A player whose game is over counts his actual points. A player whose game is in
+    progress counts what he has already scored plus the share of his projection matching
+    the share of the game still to be played, and carries only that share of the weekly
+    variance. Before kickoff that reduces to the plain projection.
+
+    `left_frac` maps an NFL team to the fraction of its game still to play.
+    """
     banked = left = var = 0.0
     unknown = []
     for p in lineup:
         if not p.get("player"):
             continue
-        if p.get("team") in done:
-            if p["actual"] is None:      # K/DST — no recomputable box score, so lean on the projection
+        frac = left_frac.get(p.get("team"), 1.0)
+        act = p["actual"]
+        if frac <= 0:                        # game over
+            if act is not None:
+                banked += act
+            elif p.get("team") in covered:   # box score read, he simply wasn't in it
+                banked += 0.0                # inactive or did not dress
+            else:                            # box score not published yet
                 banked += p["proj"]; unknown.append(p["player"])
-            else:
-                banked += p["actual"]
         else:
-            left += p["proj"]
+            banked += act or 0.0             # what he has put up so far
+            left += frac * p["proj"]
             if p["proj"] > 0:
-                var += WEEKLY_SD.get(p["pos"], 7) ** 2
+                var += frac * WEEKLY_SD.get(p["pos"], 7) ** 2
     return {"banked": round(banked, 1), "mean": round(banked + left, 1), "sd": math.sqrt(var),
-            "unknown": unknown, "left": sum(1 for p in lineup if p.get("player") and p.get("team") not in done)}
+            "unknown": unknown,
+            "left": sum(1 for p in lineup if p.get("player") and left_frac.get(p.get("team"), 1.0) > 0)}
+
+
+def live_source(week):
+    """Live points and how much of each team's game is left.
+
+    ESPN first: it updates within about a minute, while nflverse publishes finals hours
+    late, which is what made mid-Sunday totals and win probability wrong. nflverse stays as
+    the fallback for when ESPN is unreachable, and it is also what backfills a completed
+    week if ESPN's box score has aged out.
+    """
+    try:
+        from .live import live_week, team_full_names
+        d = live_week(week, team_full_names(), S.get("season", 2026))
+        if d["ok"] and d["points"]:
+            return {**d, "source": "espn"}
+    except Exception:
+        pass
+    sch = nfl_schedule()
+    done = finished_teams(sch, week)
+    teams = set(sch["home_team"]) | set(sch["away_team"])
+    return {"points": actual_points(week), "final": done, "source": "nflverse", "covered": set(),
+            "left": {t: (0.0 if t in done else 1.0) for t in teams}, "ok": False}
 
 
 def win_prob(m1, s1, m2, s2):
@@ -235,18 +271,18 @@ def compute(week=None, force=False):
     sch = nfl_schedule()
     week = week or infer_week(sch)
     games = team_games(sch, week)
-    done = finished_teams(sch, week)
     L = load_rosters(); my_full = L["my_team"]; me_name = short(my_full)
     matchups = load_matchups()
     b = board()
-    actual = actual_points(week)
+    lv = live_source(week)
+    actual, done, left_frac = lv["points"], lv["final"], lv["left"]
 
     teams = {}
     for full, byp in L["rosters"].items():
         t = short(full)
         players = [player_row(p, pos, rk, b, games, week, actual) for pos, ps in byp.items() for p in ps]
         lineup, bench, mean, sd = best_lineup(players)
-        live = live_totals(lineup, done)
+        live = live_totals(lineup, left_frac, lv.get("covered", ()))
         def top(pos, n): return sum(sorted([p["season_proj"] for p in players if p["pos"] == pos], reverse=True)[:n])
         season = top("QB", 1) + top("RB", 2) + top("WR", 2) + top("TE", 1)
         depth = sum(sorted([p["season_vbd"] for p in players if p["pos"] in ("RB", "WR")], reverse=True)[4:9])
@@ -316,7 +352,8 @@ def compute(week=None, force=False):
         "win_prob": (round(win_prob(me["live_mean"], me["live_sd"], opp["live_mean"], opp["live_sd"]), 3) if opp else None),
         "banked": me["banked"], "live_mean": me["live_mean"], "left": me["left"], "unknown": me["unknown"],
         "opp_banked": (opp["banked"] if opp else None), "opp_live_mean": (opp["live_mean"] if opp else None),
-        "in_progress": bool(done) and me["left"] > 0,
+        "in_progress": any(f < 1 for f in left_frac.values()) and me["left"] > 0,
+        "live_source": lv["source"],
         "close_calls": close, "alerts": alerts, "advice": advice, "first_lock": first_lock,
         "predictions": preds, "power": power, "waivers": waivers,
         "teams": {t: {"manager": T["manager"], "players": T["players"], "mean": T["mean"], "actual": T["actual"],
@@ -363,6 +400,9 @@ def render_markdown(d):
         P(f"| {p['slot']} | {p['player'] or 'EMPTY'} | {p.get('opp','')} | {p.get('when','')} | {p.get('proj','')} | {act} | {p.get('grade','')} |")
     if d["in_progress"]:
         P(f"\n**Live: {d['banked']} on the board, {d['left']} starters left to play.** Full-week projection {d['live_mean']}.")
+        if d.get("live_source") != "espn":
+            P("\n> Live scores are coming from nflverse because ESPN could not be reached. nflverse "
+              "publishes finals hours late, so treat both totals as a floor.")
     P(f"\nPre-game projection {d['mean']}. Earliest lock {d['first_lock']}.\n\n## Alerts\n")
     for a in d["alerts"]: P(f"- {a['text']}")
     if d["opp"]:
@@ -378,7 +418,7 @@ def render_markdown(d):
         est = lambda v, n: f"{v}*" if n else f"{v}"
         P(f"| {p['a']} vs {p['b']} | {est(p['a_banked'], p['a_est'])} | {est(p['b_banked'], p['b_est'])} | {p['a_proj']} | {p['b_proj']} | {fav} | {max(p['a_wp'], 1-p['a_wp']):.0%} |")
     if any(p["a_est"] or p["b_est"] for p in d["predictions"]):
-        P("\n\\* includes a player whose game is over but whose box score nflverse hasn't published yet — still an estimate.")
+        P("\n\\* includes a player whose game is over but whose box score hasn't published yet — still an estimate.")
     P("\n## Power rankings\n\n| # | Team | Season | Depth | This week |\n|---|---|---|---|---|")
     for p in d["power"]: P(f"| {p['rank']} | {p['team']} | {p['season']} | {p['depth']} | {p['week']} |")
     P("\n## Waiver targets\n\n| Player | Pos | Season value | This week | Drop | Gain |\n|---|---|---|---|---|---|")
