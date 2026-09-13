@@ -74,6 +74,23 @@ Known limitation: we know every team's roster but not which players the other ma
 opponent totals assume each one starts his best-projected lineup. When a manager starts someone else the
 tool's number for that team will drift from ESPN's.
 
+### How uncertain a week is (`ffdraft/variance.py`)
+
+Win probabilities come from simulating both lineups 20,000 times, not from a bell curve. Each player's
+spread is fitted from 2023-25 history three ways: a straight line in scoring level per position
+(`sd = a + b * projection`, so a 20-point receiver swings harder than a 5-point one), a per-player scale for
+whoever is genuinely streakier than the curve (shrunk toward the curve by games played, so small samples do
+not run wild), and a pool of real standardised residuals to draw from instead of a normal, which keeps
+fantasy scoring's right skew. Fitted once into `data/cache/variance.json`; delete that file to refit.
+
+    python calibrate_variance.py                 # hold out the last season and check the fit
+    python calibrate_variance.py --hold-out 2024
+
+Holding out a season the model never saw, the actual scores land evenly across the predicted distribution
+(uniformity gap 0.02, the 80% band holding 79.6% and the 50% band 50.9%). The old fixed standard deviations
+were far too wide: their 80% band held 88.6% and their 50% band 66.5%, which pulled every win probability
+toward a coin flip.
+
 Rosters live in data/league_rosters.json and matchups in data/league_schedule.json (both local-only).
 
 ### Season dashboard

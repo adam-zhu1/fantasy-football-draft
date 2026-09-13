@@ -9,6 +9,7 @@ import pandas as pd
 
 from .config import ROOT, DATA, load_settings
 from .names import norm_name, norm_team
+from . import variance as VAR
 
 S = load_settings()
 LINEUP = [("QB", 1), ("RB", 2), ("WR", 2), ("TE", 1), ("FLEX", 1), ("DST", 1), ("K", 1)]
@@ -216,26 +217,30 @@ def live_totals(lineup, left_frac, covered=()):
     `left_frac` maps an NFL team to the fraction of its game still to play.
     """
     banked = left = var = 0.0
-    unknown = []
+    unknown, sim = [], []
     for p in lineup:
         if not p.get("player"):
             continue
         frac = left_frac.get(p.get("team"), 1.0)
         act = p["actual"]
-        if frac <= 0:                        # game over
+        if frac <= 0:                        # game over, nothing left to simulate
             if act is not None:
-                banked += act
+                settled = act
             elif p.get("team") in covered:   # box score read, he simply wasn't in it
-                banked += 0.0                # inactive or did not dress
+                settled = 0.0                # inactive or did not dress
             else:                            # box score not published yet
-                banked += p["proj"]; unknown.append(p["player"])
+                settled = p["proj"]; unknown.append(p["player"])
+            banked += settled
         else:
-            banked += act or 0.0             # what he has put up so far
+            settled = act or 0.0             # what he has put up so far
+            banked += settled
             left += frac * p["proj"]
             if p["proj"] > 0:
                 var += frac * WEEKLY_SD.get(p["pos"], 7) ** 2
+        sim.append({"pos": p["pos"], "proj": p["proj"], "key": p["key"],
+                    "banked": settled, "frac": max(0.0, frac)})
     return {"banked": round(banked, 1), "mean": round(banked + left, 1), "sd": math.sqrt(var),
-            "unknown": unknown,
+            "unknown": unknown, "sim": sim,
             "left": sum(1 for p in lineup if p.get("player") and left_frac.get(p.get("team"), 1.0) > 0)}
 
 
@@ -289,11 +294,14 @@ def compute(week=None, force=False):
         act = sum(p["actual"] or 0 for p in lineup if p.get("player")) if actual else None
         teams[t] = {"name": t, "manager": full[full.find("(") + 1:-1] if "(" in full else "", "players": players, "lineup": lineup,
                     "bench": bench, "mean": mean, "sd": round(sd, 1), "season": round(season), "depth": round(depth), "actual": (round(act, 1) if act is not None else None),
-                    "banked": live["banked"], "live_mean": live["mean"], "live_sd": round(live["sd"], 1), "left": live["left"], "unknown": live["unknown"]}
+                    "banked": live["banked"], "live_mean": live["mean"], "live_sd": round(live["sd"], 1), "left": live["left"], "unknown": live["unknown"],
+                    "sim": live["sim"]}
 
     me = teams[me_name]
     opp_name = next((bb if a == me_name else a for a, bb in matchups.get(week, []) if me_name in (a, bb)), None)
     opp = teams.get(opp_name)
+    vmodel = VAR.load()
+    my_sim = VAR.matchup(vmodel, me["sim"], opp["sim"]) if opp else None
 
     # close calls & alerts
     close = []
@@ -324,8 +332,12 @@ def compute(week=None, force=False):
     preds = []
     for a, bb in matchups.get(week, []):
         if a not in teams or bb not in teams: continue
-        A, B = teams[a], teams[bb]; wp = win_prob(A["live_mean"], A["live_sd"], B["live_mean"], B["live_sd"])
+        A, B = teams[a], teams[bb]
+        sim = VAR.matchup(vmodel, A["sim"], B["sim"])
+        wp = sim["p"]
         preds.append({"a": a, "b": bb, "a_proj": A["live_mean"], "b_proj": B["live_mean"], "a_wp": round(wp, 3),
+                      "a_lo": round(sim["a_lo"]), "a_hi": round(sim["a_hi"]),
+                      "b_lo": round(sim["b_lo"]), "b_hi": round(sim["b_hi"]),
                       "a_actual": A["actual"], "b_actual": B["actual"], "a_banked": A["banked"], "b_banked": B["banked"],
                       "left": max(A["left"], B["left"]), "a_est": len(A["unknown"]), "b_est": len(B["unknown"])})
 
@@ -349,7 +361,9 @@ def compute(week=None, force=False):
         "week": week, "scraped": scraped, "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "me": me_name, "opp": opp_name, "lineup": me["lineup"], "bench": me["bench"], "mean": me["mean"], "sd": me["sd"],
         "opp_lineup": (opp["lineup"] if opp else []), "opp_mean": (opp["mean"] if opp else None),
-        "win_prob": (round(win_prob(me["live_mean"], me["live_sd"], opp["live_mean"], opp["live_sd"]), 3) if opp else None),
+        "win_prob": (round(my_sim["p"], 3) if my_sim else None),
+        "my_range": ([round(my_sim["a_lo"]), round(my_sim["a_hi"])] if my_sim else None),
+        "opp_range": ([round(my_sim["b_lo"]), round(my_sim["b_hi"])] if my_sim else None),
         "banked": me["banked"], "live_mean": me["live_mean"], "left": me["left"], "unknown": me["unknown"],
         "opp_banked": (opp["banked"] if opp else None), "opp_live_mean": (opp["live_mean"] if opp else None),
         "in_progress": any(f < 1 for f in left_frac.values()) and me["left"] > 0,
@@ -407,11 +421,15 @@ def render_markdown(d):
     for a in d["alerts"]: P(f"- {a['text']}")
     if d["opp"]:
         P("\n## Matchup\n")
+        rng = ""
+        if d.get("my_range") and d.get("opp_range"):
+            rng = (f" Likely finals, 10th to 90th percentile: you {d['my_range'][0]}-{d['my_range'][1]}, "
+                   f"him {d['opp_range'][0]}-{d['opp_range'][1]}.")
         if d["in_progress"]:
             P(f"vs {d['opp']}: **{d['banked']} to {d['opp_banked']}** right now. "
-              f"Projected final {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.\n")
+              f"Projected final {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.{rng}\n")
         else:
-            P(f"vs {d['opp']}: {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.\n")
+            P(f"vs {d['opp']}: {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.{rng}\n")
     P("## Predictions\n\n| Matchup | Now | Now | Proj | Proj | Favorite | Win % |\n|---|---|---|---|---|---|---|")
     for p in d["predictions"]:
         fav = p["a"] if p["a_wp"] >= 0.5 else p["b"]
