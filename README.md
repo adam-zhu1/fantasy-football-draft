@@ -57,10 +57,23 @@ Prints the lineup to enter in ESPN (with lock times), alerts (byes, missing from
 probability, predictions for every matchup, power rankings, and waiver targets. Uses FantasyPros weekly
 consensus via nflverse (refreshes daily), so re-run Saturday night or Sunday morning for the latest.
 
-Once games start it scores the week live: starters whose game is final count their actual points, the rest
-count their projection, and the win probability only carries variance for the players left to play. Scoring
-comes from `scoring_detail` / `kicking_detail` / `dst_detail` in settings.json, transcribed from ESPN's
-League > Settings > Scoring page — re-check them if the commissioner changes anything.
+Once games start it scores the week live from ESPN's public box scores (`ffdraft/live.py`), which update
+within about a minute. A finished player counts his actual points; a player mid-game counts what he has
+already scored plus the share of his projection matching the share of the game still to play, and carries
+only that share of the weekly variance. Scoring comes from `scoring_detail` / `kicking_detail` /
+`dst_detail` in settings.json, transcribed from ESPN's League > Settings > Scoring page — re-check them if
+the commissioner changes anything. Applying those rules to ESPN's box score reproduces ESPN's own fantasy
+points exactly, so the two should never disagree.
+
+Do not go back to the nflverse feed for live scoring. It publishes finals hours late: on Sun Sep 13 2026 at
+4:15pm ET it still had BAL@IND unplayed after a 41-23 final, which showed the Week 1 opponent on 35.3 when
+he was really on 104.26 and put the matchup at 75% the wrong way. nflverse is kept only as the fallback for
+when ESPN is unreachable, and the report says so in a callout when it falls back.
+
+Known limitation: we know every team's roster but not which players the other managers actually started, so
+opponent totals assume each one starts his best-projected lineup. When a manager starts someone else the
+tool's number for that team will drift from ESPN's.
+
 Rosters live in data/league_rosters.json and matchups in data/league_schedule.json (both local-only).
 
 ### Season dashboard
