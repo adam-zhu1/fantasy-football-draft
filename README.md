@@ -88,8 +88,18 @@ fantasy scoring's right skew. Fitted once into `data/cache/variance.json`; delet
 
 Holding out a season the model never saw, the actual scores land evenly across the predicted distribution
 (uniformity gap 0.02, the 80% band holding 79.6% and the 50% band 50.9%). The old fixed standard deviations
-were far too wide: their 80% band held 88.6% and their 50% band 66.5%, which pulled every win probability
-toward a coin flip.
+were far too wide: their 80% band held 88.6% and their 50% band 66.5%.
+
+Be honest about where this pays off. Summing nine starters averages the per-player differences away, so
+team-level win probability barely moves: across Week 1's six matchups the old and new numbers differ by 0.3
+points of probability on average. The gain is per player, and it shows up in the two places a single
+player's spread is the whole question:
+
+- The **Floor** and **Ceiling** columns in the lineup table, the 10th and 90th percentile of where each
+  starter lands. The old model could not tell a steady possession receiver from a boom-or-bust deep threat.
+- The **lean**. Below 35% the report tells you to maximise ceiling rather than projection, because losing
+  by less is worth nothing; above 65% it tells you to protect the floor. It then names any bench swap that
+  actually improves the thing you should be maximising, which is often none.
 
 Rosters live in data/league_rosters.json and matchups in data/league_schedule.json (both local-only).
 

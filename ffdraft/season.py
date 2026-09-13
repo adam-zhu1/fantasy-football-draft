@@ -303,6 +303,40 @@ def compute(week=None, force=False):
     vmodel = VAR.load()
     my_sim = VAR.matchup(vmodel, me["sim"], opp["sim"]) if opp else None
 
+    # floor and ceiling for everyone I could still start, so a swap can be judged on
+    # spread and not just on the projection
+    frac_of = {p["key"]: left_frac.get(p.get("team"), 1.0) for p in me["players"]}
+    for p in me["lineup"] + me["bench"]:
+        if not p.get("player"):
+            continue
+        r = VAR.player_range(vmodel, p["pos"], p["proj"], p["key"],
+                             banked=(p["actual"] or 0.0) if frac_of.get(p["key"], 1.0) > 0 else (p["actual"] or 0.0),
+                             frac=frac_of.get(p["key"], 1.0))
+        p["floor"], p["ceiling"] = r["floor"], r["ceiling"]
+
+    # when you are well behind, the swap that helps is the one with the higher ceiling,
+    # even at a lower projection; when well ahead it is the one with the higher floor
+    lean = None
+    if my_sim:
+        if my_sim["p"] < 0.35:
+            lean = "ceiling"
+        elif my_sim["p"] > 0.65:
+            lean = "floor"
+    swaps = []
+    if lean:
+        for st in me["lineup"]:
+            if not st.get("player") or st["slot"] in ("K", "DST") or frac_of.get(st["key"], 1.0) <= 0:
+                continue
+            ok = FLEX_POS if st["slot"] == "FLEX" else {st["slot"]}
+            for bn in me["bench"]:
+                if bn["pos"] not in ok or bn.get("proj", 0) <= 0 or frac_of.get(bn["key"], 1.0) <= 0:
+                    continue
+                if bn.get(lean, 0) > st.get(lean, 0) + 0.5:
+                    swaps.append({"slot": st["slot"], "out": st["player"], "in": bn["player"],
+                                  "lean": lean, "out_val": st.get(lean), "in_val": bn.get(lean),
+                                  "out_proj": st["proj"], "in_proj": bn["proj"]})
+        swaps.sort(key=lambda x: -(x["in_val"] - x["out_val"]))
+
     # close calls & alerts
     close = []
     for p in me["lineup"]:
@@ -369,6 +403,7 @@ def compute(week=None, force=False):
         "in_progress": any(f < 1 for f in left_frac.values()) and me["left"] > 0,
         "live_source": lv["source"],
         "close_calls": close, "alerts": alerts, "advice": advice, "first_lock": first_lock,
+        "lean": lean, "swaps": swaps[:3],
         "predictions": preds, "power": power, "waivers": waivers,
         "teams": {t: {"manager": T["manager"], "players": T["players"], "mean": T["mean"], "actual": T["actual"],
                       "banked": T["banked"], "live_mean": T["live_mean"], "left": T["left"]} for t, T in teams.items()},
@@ -407,11 +442,14 @@ def season_outlook(teams, matchups, from_week, n=4000, seed=7):
 def render_markdown(d):
     o = []; P = o.append
     P(f"# Week {d['week']} report — {S.get('league_name', '')}\n\nExpert rankings scraped {d['scraped']}.\n")
-    P("## Lineup\n\n| Slot | Start | Opp | Game | Proj | Actual | Grade |\n|---|---|---|---|---|---|---|")
+    P("## Lineup\n\n| Slot | Start | Opp | Game | Proj | Floor | Ceiling | Actual | Grade |\n|---|---|---|---|---|---|---|---|---|")
     for p in d["lineup"]:
         act = "—" if p.get("actual") is None else p["actual"]
         if p.get("player") and p.get("actual") is None and p.get("player") in d["unknown"]: act = "? (played)"
-        P(f"| {p['slot']} | {p['player'] or 'EMPTY'} | {p.get('opp','')} | {p.get('when','')} | {p.get('proj','')} | {act} | {p.get('grade','')} |")
+        P(f"| {p['slot']} | {p['player'] or 'EMPTY'} | {p.get('opp','')} | {p.get('when','')} | {p.get('proj','')} "
+          f"| {p.get('floor','')} | {p.get('ceiling','')} | {act} | {p.get('grade','')} |")
+    P("\nFloor and ceiling are the 10th and 90th percentile of where that player finishes, "
+      "from his own fitted distribution.")
     if d["in_progress"]:
         P(f"\n**Live: {d['banked']} on the board, {d['left']} starters left to play.** Full-week projection {d['live_mean']}.")
         if d.get("live_source") != "espn":
@@ -430,7 +468,17 @@ def render_markdown(d):
               f"Projected final {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.{rng}\n")
         else:
             P(f"vs {d['opp']}: {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.{rng}\n")
-    P("## Predictions\n\n| Matchup | Now | Now | Proj | Proj | Favorite | Win % |\n|---|---|---|---|---|---|---|")
+    if d.get("lean") == "ceiling":
+        P("You are well behind, so the projection is the wrong thing to maximise. Take the bigger "
+          "ceiling even at a lower projection: losing by less is worth nothing.")
+    elif d.get("lean") == "floor":
+        P("You are well ahead, so protect the lead. Take the bigger floor even at a lower projection.")
+    for s in d.get("swaps", []):
+        P(f"- {s['lean'].title()} swap: **{s['in']} in for {s['out']}** at {s['slot']} "
+          f"({s['lean']} {s['in_val']} vs {s['out_val']}, projection {s['in_proj']} vs {s['out_proj']}).")
+    if d.get("lean") and not d.get("swaps"):
+        P("- No swap on your bench improves that. The lineup you have is already the right shape.")
+    P("\n## Predictions\n\n| Matchup | Now | Now | Proj | Proj | Favorite | Win % |\n|---|---|---|---|---|---|---|")
     for p in d["predictions"]:
         fav = p["a"] if p["a_wp"] >= 0.5 else p["b"]
         est = lambda v, n: f"{v}*" if n else f"{v}"

@@ -232,6 +232,17 @@ def sample_team(model, starters, n, rng):
     return total
 
 
+def player_range(model, pos, mu, key, banked=0.0, frac=1.0, n=4000, seed=11):
+    """One player's floor, likely score and ceiling: 10th, 50th and 90th percentile of where
+    he finishes, counting what he has already banked."""
+    if frac <= 0 or mu <= 0:
+        return {"floor": round(banked, 1), "mid": round(banked, 1), "ceiling": round(banked, 1)}
+    s = banked + sample_player(model, pos, mu, key, n, np.random.default_rng(seed), frac)
+    return {"floor": round(float(np.percentile(s, 10)), 1),
+            "mid": round(float(np.median(s)), 1),
+            "ceiling": round(float(np.percentile(s, 90)), 1)}
+
+
 def matchup(model, a_starters, b_starters, n=20000, seed=7):
     """P(a beats b), plus each side's simulated median and 10th-90th percentile range."""
     rng = np.random.default_rng(seed)
