@@ -389,7 +389,7 @@ def compute(week=None, force=False):
                         "week_proj": round(float(rk.loc[k, "proj"]), 1), "drop": (w["player"] if w else None), "gain": round(float(gain), 1), "worth_it": bool(gain > 3)})
 
     first_lock = min((p["lock"] for p in me["lineup"] if p.get("player") and p["lock"]), default="")
-    outlook = season_outlook(teams, matchups, week)
+    outlook = season_outlook(teams, matchups, week, vmodel)
     return {
         "outlook": outlook,
         "week": week, "scraped": scraped, "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -411,10 +411,15 @@ def compute(week=None, force=False):
     }
 
 
-def season_outlook(teams, matchups, from_week, n=4000, seed=7):
-    """Simulate the remaining regular season. Weekly score ~ N(mu, 21) where mu = season-starter strength
-    per game + ~15 for K/DST. Returns per-team expected wins, P(playoffs = top 6), P(last), and
-    strength of schedule (average opponent mu)."""
+def season_outlook(teams, matchups, from_week, vmodel=None, n=4000, seed=7):
+    """Simulate the remaining regular season. Returns per-team expected wins, P(playoffs = top 6),
+    P(last), and strength of schedule (average opponent mu).
+
+    Future weeks are a plain N(mu, 21) where mu is season-starter strength per game plus about 15
+    for the kicker and defence. The week already under way is not: it is drawn from the live
+    lineups instead, so points already banked and games already finished count. Treating a
+    three-quarters-decided week as a fresh coin flip flatters whoever is currently losing.
+    """
     names = list(teams)
     mu = {t: teams[t]["season"] / 17 + 15 for t in names}
     rng = np.random.default_rng(seed)
@@ -423,7 +428,13 @@ def season_outlook(teams, matchups, from_week, n=4000, seed=7):
     for w in weeks:
         for a, b in matchups[w]:
             if a not in teams or b not in teams: continue
-            sa = rng.normal(mu[a], 21, n); sb = rng.normal(mu[b], 21, n)
+            live = (w == from_week and vmodel is not None
+                    and teams[a].get("sim") is not None and teams[b].get("sim") is not None)
+            if live:
+                sa = VAR.sample_team(vmodel, teams[a]["sim"], n, rng)
+                sb = VAR.sample_team(vmodel, teams[b]["sim"], n, rng)
+            else:
+                sa = rng.normal(mu[a], 21, n); sb = rng.normal(mu[b], 21, n)
             wins[a] += sa > sb; wins[b] += sb > sa; pts[a] += sa; pts[b] += sb
     W = np.column_stack([wins[t] for t in names]); Pt = np.column_stack([pts[t] for t in names])
     # rank by wins, tiebreak points
