@@ -17,6 +17,7 @@ FLEX_POS = {"RB", "WR", "TE"}
 WEEKLY_SD = {"QB": 7.5, "RB": 7.5, "WR": 8.0, "TE": 6.0, "K": 4.0, "DST": 6.0}
 ROSTERS_FILE = DATA / "league_rosters.json"
 SCHED_FILE = DATA / "league_schedule.json"
+LINEUPS_FILE = DATA / "week_lineups.json"
 _CACHE = {}
 
 
@@ -163,6 +164,31 @@ def parse_schedule_paste(text, team_names):
     return out
 
 
+def load_week_lineups():
+    return json.loads(LINEUPS_FILE.read_text()) if LINEUPS_FILE.exists() else {}
+
+
+def save_week_lineups(d):
+    LINEUPS_FILE.write_text(json.dumps(d, indent=1))
+
+
+def lineup_from_snapshot(players, snap):
+    """Rebuild a frozen lineup, so a week that has already kicked off keeps the starters it
+    had rather than being re-picked from projections scraped afterwards."""
+    by_key = {p["key"]: p for p in players}
+    lineup, used = [], set()
+    for slot, key in snap:
+        p = by_key.get(key)
+        if p:
+            lineup.append({"slot": slot, **p}); used.add(key)
+        else:
+            lineup.append({"slot": slot, "player": None})
+    bench = [p for p in players if p["key"] not in used]
+    mean = sum(p["proj"] for p in lineup if p.get("player"))
+    var = sum(WEEKLY_SD.get(p["pos"], 7) ** 2 for p in lineup if p.get("player") and p["proj"] > 0)
+    return lineup, bench, round(mean, 1), math.sqrt(var)
+
+
 def board():
     if "board" not in _CACHE:
         _CACHE["board"] = pd.read_csv(ROOT / "board.csv").set_index("key")
@@ -281,12 +307,25 @@ def compute(week=None, force=False):
     b = board()
     lv = live_source(week)
     actual, done, left_frac = lv["points"], lv["final"], lv["left"]
+    # Once a week has kicked off its lineups are frozen. Re-picking them later from fresh
+    # projections would score a finished week with hindsight: after the Week 1 re-scrape the
+    # tool swapped an 18-point tight end in for the 2.6 the opponent actually started.
+    snaps = load_week_lineups(); wk = str(week)
+    week_started = any(f < 1 for f in left_frac.values())
+    snap_dirty = False
 
     teams = {}
     for full, byp in L["rosters"].items():
         t = short(full)
         players = [player_row(p, pos, rk, b, games, week, actual) for pos, ps in byp.items() for p in ps]
-        lineup, bench, mean, sd = best_lineup(players)
+        snap = snaps.get(wk, {}).get(t)
+        if snap:
+            lineup, bench, mean, sd = lineup_from_snapshot(players, snap)
+        else:
+            lineup, bench, mean, sd = best_lineup(players)
+            if week_started:
+                snaps.setdefault(wk, {})[t] = [[p["slot"], p["key"]] for p in lineup if p.get("player")]
+                snap_dirty = True
         live = live_totals(lineup, left_frac, lv.get("covered", ()))
         def top(pos, n): return sum(sorted([p["season_proj"] for p in players if p["pos"] == pos], reverse=True)[:n])
         season = top("QB", 1) + top("RB", 2) + top("WR", 2) + top("TE", 1)
@@ -296,6 +335,9 @@ def compute(week=None, force=False):
                     "bench": bench, "mean": mean, "sd": round(sd, 1), "season": round(season), "depth": round(depth), "actual": (round(act, 1) if act is not None else None),
                     "banked": live["banked"], "live_mean": live["mean"], "live_sd": round(live["sd"], 1), "left": live["left"], "unknown": live["unknown"],
                     "sim": live["sim"]}
+
+    if snap_dirty:
+        save_week_lineups(snaps)
 
     me = teams[me_name]
     opp_name = next((bb if a == me_name else a for a, bb in matchups.get(week, []) if me_name in (a, bb)), None)

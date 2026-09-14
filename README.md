@@ -74,6 +74,14 @@ Known limitation: we know every team's roster but not which players the other ma
 opponent totals assume each one starts his best-projected lineup. When a manager starts someone else the
 tool's number for that team will drift from ESPN's.
 
+Lineups freeze once a week kicks off, into `data/week_lineups.json` (local-only). Without that, re-running
+after the next scrape re-picks a finished week's starters using projections that did not exist at kickoff:
+the Monday Week 1 scrape swapped an 18-point tight end into the opponent's lineup in place of the 2.6 he
+actually started, inflating him by 15. Week 1's entry for `green fn` and `Prithish's Perfect Team` was
+seeded from the real ESPN box score; the other ten are the best-projected lineup frozen after the fact. To
+correct a team's frozen lineup, edit that file. Deleting it re-freezes every week from today's projections,
+which is wrong for weeks already played.
+
 ### How uncertain a week is (`ffdraft/variance.py`)
 
 Win probabilities come from simulating both lineups 20,000 times, not from a bell curve. Each player's
