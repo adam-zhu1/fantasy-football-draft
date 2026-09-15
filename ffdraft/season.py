@@ -431,7 +431,8 @@ def compute(week=None, force=False):
                         "week_proj": round(float(rk.loc[k, "proj"]), 1), "drop": (w["player"] if w else None), "gain": round(float(gain), 1), "worth_it": bool(gain > 3)})
 
     first_lock = min((p["lock"] for p in me["lineup"] if p.get("player") and p["lock"]), default="")
-    outlook = season_outlook(teams, matchups, week, vmodel)
+    outlook = season_outlook(teams, matchups, week, vmodel,
+                             prior_results(matchups, week, rk, b, sch))
     return {
         "outlook": outlook,
         "week": week, "scraped": scraped, "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -453,7 +454,39 @@ def compute(week=None, force=False):
     }
 
 
-def season_outlook(teams, matchups, from_week, vmodel=None, n=4000, seed=7):
+def prior_results(matchups, upto_week, rk, b, sch):
+    """Wins and points already banked in completed weeks.
+
+    Without this the outlook restarts everyone at 0-0 each week, so a team that went 1-0 is
+    rated the same as one that went 0-1 and the standings it produces are fiction.
+    """
+    snaps = load_week_lineups()
+    rosters = load_rosters()["rosters"]
+    wins, pts = {}, {}
+    for w in range(1, upto_week):
+        snap = snaps.get(str(w))
+        if not snap:
+            continue
+        lv = live_source(w)
+        games = team_games(sch, w)
+        scores = {}
+        for full, byp in rosters.items():
+            t = short(full)
+            if t not in snap:
+                continue
+            players = [player_row(pl, pos, rk, b, games, w, lv["points"]) for pos, ps in byp.items() for pl in ps]
+            lineup, _, _, _ = lineup_from_snapshot(players, snap[t])
+            scores[t] = live_totals(lineup, lv["left"], lv.get("covered", ()))["banked"]
+        for a, bb in matchups.get(w, []):
+            if a in scores and bb in scores:
+                wins[a] = wins.get(a, 0) + (1 if scores[a] > scores[bb] else 0)
+                wins[bb] = wins.get(bb, 0) + (1 if scores[bb] > scores[a] else 0)
+        for t, sc in scores.items():
+            pts[t] = pts.get(t, 0.0) + sc
+    return wins, pts
+
+
+def season_outlook(teams, matchups, from_week, vmodel=None, prior=None, n=4000, seed=7):
     """Simulate the remaining regular season. Returns per-team expected wins, P(playoffs = top 6),
     P(last), and strength of schedule (average opponent mu).
 
@@ -465,7 +498,9 @@ def season_outlook(teams, matchups, from_week, vmodel=None, n=4000, seed=7):
     names = list(teams)
     mu = {t: teams[t]["season"] / 17 + 15 for t in names}
     rng = np.random.default_rng(seed)
-    wins = {t: np.zeros(n) for t in names}; pts = {t: np.zeros(n) for t in names}
+    pw, pp = (prior or ({}, {}))
+    wins = {t: np.full(n, float(pw.get(t, 0))) for t in names}
+    pts = {t: np.full(n, float(pp.get(t, 0.0))) for t in names}
     weeks = [w for w in matchups if w >= from_week and w <= 14]
     for w in weeks:
         for a, b in matchups[w]:
