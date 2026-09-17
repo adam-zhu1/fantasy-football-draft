@@ -111,6 +111,28 @@ player's spread is the whole question:
 
 Rosters live in data/league_rosters.json and matchups in data/league_schedule.json (both local-only).
 
+### Team strength that learns (`ffdraft/ratings.py`)
+
+The outlook used to rate every team by its draft-day projection for the whole season, so
+results never changed anyone's rating and the playoff and last-place numbers stayed vague.
+Ratings now blend the draft projection with actual scoring, weighted by evidence:
+
+    w = (n / sigma^2) / (1 / tau^2 + n / sigma^2)
+
+`sigma` is a team's week-to-week spread and `tau` is how wrong a draft projection can be
+about a team's true level. Both are estimated from the league's own scoring from week 3
+onward; before that they fall back to 21 and 6. The league's overall scoring level is
+corrected separately and much faster, because it averages over every team and week: in 2026
+the draft projections sat about 15 points a week below what teams actually scored, a bias
+shared by all twelve and therefore invisible in head-to-head play.
+
+Treat weeks 1 and 2 as provisional. Early output is sensitive to `tau`: after Week 1 2026 the
+bottom team's last-place probability ran from 29% at tau=3 to 87% at tau=25. From week 3 the
+data sets it and the sensitivity goes away.
+
+Two checks worth re-running after changes: expected wins across the twelve teams must sum to
+84 (12 teams x 14 weeks / 2), and last-place probabilities must sum to 1.
+
 ### Season dashboard
 Double-click **Start Season Dashboard.command** (or `python season_server.py`) → http://127.0.0.1:5056.
 Tabs: Lineup (what to set in ESPN, lock times, alerts, close calls), My matchup (win probability), Predictions,

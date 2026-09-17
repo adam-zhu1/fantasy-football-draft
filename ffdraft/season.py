@@ -10,6 +10,7 @@ import pandas as pd
 from .config import ROOT, DATA, load_settings
 from .names import norm_name, norm_team
 from . import variance as VAR
+from .ratings import team_ratings
 
 S = load_settings()
 LINEUP = [("QB", 1), ("RB", 2), ("WR", 2), ("TE", 1), ("FLEX", 1), ("DST", 1), ("K", 1)]
@@ -431,8 +432,8 @@ def compute(week=None, force=False):
                         "week_proj": round(float(rk.loc[k, "proj"]), 1), "drop": (w["player"] if w else None), "gain": round(float(gain), 1), "worth_it": bool(gain > 3)})
 
     first_lock = min((p["lock"] for p in me["lineup"] if p.get("player") and p["lock"]), default="")
-    outlook = season_outlook(teams, matchups, week, vmodel,
-                             prior_results(matchups, week, rk, b, sch))
+    pw, pp, pbw = prior_results(matchups, week, rk, b, sch)
+    outlook = season_outlook(teams, matchups, week, vmodel, (pw, pp), pbw)
     return {
         "outlook": outlook,
         "week": week, "scraped": scraped, "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -462,7 +463,7 @@ def prior_results(matchups, upto_week, rk, b, sch):
     """
     snaps = load_week_lineups()
     rosters = load_rosters()["rosters"]
-    wins, pts = {}, {}
+    wins, pts, by_week = {}, {}, {}
     for w in range(1, upto_week):
         snap = snaps.get(str(w))
         if not snap:
@@ -483,10 +484,11 @@ def prior_results(matchups, upto_week, rk, b, sch):
                 wins[bb] = wins.get(bb, 0) + (1 if scores[bb] > scores[a] else 0)
         for t, sc in scores.items():
             pts[t] = pts.get(t, 0.0) + sc
-    return wins, pts
+            by_week.setdefault(t, []).append(sc)
+    return wins, pts, by_week
 
 
-def season_outlook(teams, matchups, from_week, vmodel=None, prior=None, n=4000, seed=7):
+def season_outlook(teams, matchups, from_week, vmodel=None, prior=None, scores_by_week=None, n=4000, seed=7):
     """Simulate the remaining regular season. Returns per-team expected wins, P(playoffs = top 6),
     P(last), and strength of schedule (average opponent mu).
 
@@ -496,7 +498,8 @@ def season_outlook(teams, matchups, from_week, vmodel=None, prior=None, n=4000, 
     three-quarters-decided week as a fresh coin flip flatters whoever is currently losing.
     """
     names = list(teams)
-    mu = {t: teams[t]["season"] / 17 + 15 for t in names}
+    prior_mu = {t: teams[t]["season"] / 17 + 15 for t in names}
+    mu, rating_detail = team_ratings(prior_mu, scores_by_week or {})
     rng = np.random.default_rng(seed)
     pw, pp = (prior or ({}, {}))
     wins = {t: np.full(n, float(pw.get(t, 0))) for t in names}
@@ -523,8 +526,12 @@ def season_outlook(teams, matchups, from_week, vmodel=None, prior=None, n=4000, 
         opp_mu = [mu[b if a == t else a] for w in weeks for a, b in matchups[w] if t in (a, b)]
         out.append({"team": t, "exp_wins": round(float(W[:, i].mean()), 1), "p_playoffs": round(float((ranks[:, i] <= 6).mean()), 3),
                     "p_last": round(float((ranks[:, i] == 12).mean()), 3), "p_top": round(float((ranks[:, i] == 1).mean()), 3),
-                    "sos": round(float(np.mean(opp_mu)) if opp_mu else 0, 1), "mu": round(mu[t], 1)})
-    return sorted(out, key=lambda x: -x["exp_wins"])
+                    "sos": round(float(np.mean(opp_mu)) if opp_mu else 0, 1), "mu": round(mu[t], 1),
+                    "prior_mu": round(prior_mu[t], 1), "learned": rating_detail["weight"].get(t, 0.0)})
+    out = sorted(out, key=lambda x: -x["exp_wins"])
+    for o in out:
+        o["rating_detail"] = rating_detail
+    return out
 
 
 def render_markdown(d):
