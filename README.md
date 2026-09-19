@@ -82,6 +82,14 @@ seeded from the real ESPN box score; the other ten are the best-projected lineup
 correct a team's frozen lineup, edit that file. Deleting it re-freezes every week from today's projections,
 which is wrong for weeks already played.
 
+### Injuries
+
+Designations come from ESPN's public injuries feed automatically (`live.injuries()`), so the report no
+longer tells you to go and check the Q / D / O tags yourself. A player ESPN lists as Out, on Injured
+Reserve or suspended has his projection zeroed, which stops a stale number from starting him or inflating
+an opponent. Doubtful and Questionable are flagged loudly but left alone, since they are warnings rather
+than certainties. Your opponent's designations are listed too, because they move the matchup.
+
 ### How uncertain a week is (`ffdraft/variance.py`)
 
 Win probabilities come from simulating both lineups 20,000 times, not from a bell curve. Each player's

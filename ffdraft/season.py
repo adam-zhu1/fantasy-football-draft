@@ -197,14 +197,22 @@ def board():
 
 
 # ---------------------------------------------------------------- lineup math
-def player_row(name, pos, rk, b, games, week, actual):
+def player_row(name, pos, rk, b, games, week, actual, inj=None):
     k = norm_name(name)
     r = rk.loc[k] if k in rk.index else None
     team = r["team"] if r is not None and isinstance(r["team"], str) and r["team"] else (b.loc[k, "team"] if k in b.index else "")
     game = games.get(team)
     on_bye = (r is not None and pd.notna(r["bye"]) and int(r["bye"]) == week) or game is None
     proj = 0.0 if on_bye else (float(r["proj"]) if r is not None and pd.notna(r["proj"]) else 0.0)
+    status, hurt = (inj or {}).get(k, ("", ""))
+    # A player ESPN lists as out will score nothing, so do not let a stale projection start
+    # him or inflate an opponent. Doubtful is flagged loudly but left alone: it is a warning,
+    # not a certainty.
+    from .live import OUT_STATUSES
+    if status in OUT_STATUSES:
+        proj = 0.0
     return {
+        "inj": status, "inj_detail": hurt,
         "player": name, "pos": pos, "team": team, "key": k, "proj": round(proj, 1),
         "ecr": (round(float(r["ecr"]), 1) if r is not None and pd.notna(r["ecr"]) else None),
         "grade": (r["start_sit_grade"] if r is not None and isinstance(r.get("start_sit_grade"), str) else ""),
@@ -311,6 +319,11 @@ def compute(week=None, force=False):
     # Once a week has kicked off its lineups are frozen. Re-picking them later from fresh
     # projections would score a finished week with hindsight: after the Week 1 re-scrape the
     # tool swapped an 18-point tight end in for the 2.6 the opponent actually started.
+    try:
+        from .live import injuries as _injuries
+        inj = _injuries()
+    except Exception:
+        inj = {}
     snaps = load_week_lineups(); wk = str(week)
     week_started = any(f < 1 for f in left_frac.values())
     snap_dirty = False
@@ -318,7 +331,7 @@ def compute(week=None, force=False):
     teams = {}
     for full, byp in L["rosters"].items():
         t = short(full)
-        players = [player_row(p, pos, rk, b, games, week, actual) for pos, ps in byp.items() for p in ps]
+        players = [player_row(p, pos, rk, b, games, week, actual, inj) for pos, ps in byp.items() for p in ps]
         snap = snaps.get(wk, {}).get(t)
         if snap:
             lineup, bench, mean, sd = lineup_from_snapshot(players, snap)
@@ -402,8 +415,21 @@ def compute(week=None, force=False):
             conflict = (tag == "sit" and p["key"] in starting) or (tag == "start" and p["key"] not in starting)
             advice.append({"player": p["player"], "pos": p["pos"], "starting": p["key"] in starting, "tag": tag,
                            "conflict": bool(conflict and tag), "proj": p["proj"], "note": p["note"]})
+    for p in me["players"]:
+        if not p.get("inj"):
+            continue
+        where = "IN YOUR LINEUP" if p["key"] in starting else "on your bench"
+        detail = f" ({p['inj_detail']})" if p.get("inj_detail") else ""
+        if p["inj"] in ("Out", "Injured Reserve", "Suspension"):
+            alerts.append({"level": "bad" if p["key"] in starting else "warn",
+                           "text": f"{p['player']} ({p['pos']}) is {p['inj']}{detail} and is {where}."
+                                   + (" Replace him." if p["key"] in starting else "")})
+        elif p["inj"] in ("Doubtful", "Questionable"):
+            alerts.append({"level": "warn",
+                           "text": f"{p['player']} ({p['pos']}) is {p['inj']}{detail}, {where}."
+                                   + (" Check he is active before kickoff." if p["key"] in starting else "")})
     if not alerts:
-        alerts.append({"level": "ok", "text": "No byes, nobody missing from the rankings. Check ESPN's injury tags (Q / D / O) before each game locks."})
+        alerts.append({"level": "ok", "text": "No byes, no injury designations on your roster, nobody missing from the rankings."})
     advice.sort(key=lambda a: (not a["conflict"], not a["starting"], -a["proj"]))
 
     preds = []
@@ -448,6 +474,10 @@ def compute(week=None, force=False):
         "live_source": lv["source"],
         "close_calls": close, "alerts": alerts, "advice": advice, "first_lock": first_lock,
         "lean": lean, "swaps": swaps[:3],
+        "opp_injuries": ([{"player": q["player"], "pos": q["pos"], "status": q["inj"],
+                           "detail": q.get("inj_detail", ""),
+                           "starting": any(x.get("key") == q["key"] for x in opp["lineup"])}
+                          for q in opp["players"] if q.get("inj")] if opp else []),
         "predictions": preds, "power": power, "waivers": waivers,
         "teams": {t: {"manager": T["manager"], "players": T["players"], "mean": T["mean"], "actual": T["actual"],
                       "banked": T["banked"], "live_mean": T["live_mean"], "left": T["left"]} for t, T in teams.items()},
@@ -552,6 +582,10 @@ def render_markdown(d):
               "publishes finals hours late, so treat both totals as a floor.")
     P(f"\nPre-game projection {d['mean']}. Earliest lock {d['first_lock']}.\n\n## Alerts\n")
     for a in d["alerts"]: P(f"- {a['text']}")
+    for q in d.get("opp_injuries", []):
+        where = "STARTING" if q["starting"] else "bench"
+        detail = f" ({q['detail']})" if q["detail"] else ""
+        P(f"- Opponent: {q['player']} ({q['pos']}, {where}) is {q['status']}{detail}.")
     if d["opp"]:
         P("\n## Matchup\n")
         rng = ""

@@ -35,10 +35,10 @@ _TWO_PT = re.compile(r"\(([^)]*?)two-point conversion[^)]*\)", re.I)
 _NAME_IN_2PT = re.compile(r"([A-Z][A-Za-z.'\-]+(?:\s+[A-Z][A-Za-z.'\-]+)+)")
 
 
-def _get(url):
+def _get(url, ttl=None):
     """GET and parse JSON, cached briefly. Returns None on any failure."""
     hit = _CACHE.get(url)
-    if hit and time.time() - hit[0] < _TTL:
+    if hit and time.time() - hit[0] < (_TTL if ttl is None else ttl):
         return hit[1]
     try:
         r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
@@ -316,4 +316,32 @@ def team_full_names():
         t = grp.get("team", {})
         if t.get("abbreviation") and t.get("displayName"):
             out[norm_team(t["abbreviation"])] = t["displayName"]
+    return out
+
+
+# ------------------------------------------------------------------ injuries
+# Statuses that mean the player will not take the field. "Doubtful" is left out
+# deliberately: it is a strong warning, not a certainty, so it is flagged loudly but the
+# projection is left alone rather than zeroed.
+OUT_STATUSES = {"Out", "Injured Reserve", "Suspension", "Physically Unable to Perform",
+                "Non Football Injury", "Practice Squad"}
+_INJ_TTL = 1800     # the payload is several megabytes and designations move slowly
+
+
+def injuries():
+    """{player key: (status, body part)} for everyone ESPN lists with a designation.
+
+    Closes the gap where the report told you to go and check ESPN's Q / D / O tags yourself.
+    """
+    d = _get(f"{API}/injuries", ttl=_INJ_TTL)
+    out = {}
+    if not d:
+        return out
+    for team in d.get("injuries", []):
+        for e in team.get("injuries", []):
+            a = e.get("athlete") or {}
+            key = norm_name(a.get("displayName"))
+            status = e.get("status")
+            if key and status and status != "Active":
+                out[key] = (status, ((e.get("details") or {}) or {}).get("type") or "")
     return out
