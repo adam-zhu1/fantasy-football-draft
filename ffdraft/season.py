@@ -597,11 +597,14 @@ def render_markdown(d):
               f"Projected final {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.{rng}\n")
         else:
             P(f"vs {d['opp']}: {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.{rng}\n")
+    # Phrased by win probability, not by the current scoreboard. You can be trailing on
+    # points and still be a heavy favourite when you have more players left to play.
     if d.get("lean") == "ceiling":
-        P("You are well behind, so the projection is the wrong thing to maximise. Take the bigger "
-          "ceiling even at a lower projection: losing by less is worth nothing.")
+        P(f"At {d['win_prob']:.0%} you are a heavy underdog, so the projection is the wrong thing to "
+          "maximise. Take the bigger ceiling even at a lower projection: losing by less is worth nothing.")
     elif d.get("lean") == "floor":
-        P("You are well ahead, so protect the lead. Take the bigger floor even at a lower projection.")
+        P(f"At {d['win_prob']:.0%} you are a strong favourite, so protect the win rather than the score. "
+          "Take the bigger floor even at a lower projection.")
     for s in d.get("swaps", []):
         P(f"- {s['lean'].title()} swap: **{s['in']} in for {s['out']}** at {s['slot']} "
           f"({s['lean']} {s['in_val']} vs {s['out_val']}, projection {s['in_proj']} vs {s['out_proj']}).")
