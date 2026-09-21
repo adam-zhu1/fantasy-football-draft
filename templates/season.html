@@ -124,8 +124,9 @@ function outlook(){
   const o = D.outlook; const me = o.find(x=>x.team===D.me);
   return `<div class="panel"><h2>Season outlook — ${(15-D.week)} regular-season weeks simulated 4,000 times</h2>
     <p class="hint">Each team's weekly score is drawn around its projected strength; every remaining matchup on the schedule is played out. Top 6 make the playoffs. This ignores injuries and trades, so treat it as a baseline, not a forecast.</p>
-    <div class="kv"><div><span>Your expected wins</span><b>${me.exp_wins} / 14</b></div><div><span>Playoffs</span><b>${pct(me.p_playoffs)}</b></div><div><span>Finish last</span><b class="${me.p_last<0.06?'grade gA':'grade gC'}">${pct(me.p_last)}</b></div><div><span>Schedule difficulty</span><b>#${[...o].sort((a,b)=>b.sos-a.sos).findIndex(x=>x.team===D.me)+1} hardest</b></div></div>
-    <table style="margin-top:12px"><thead><tr><th>#</th><th>Team</th><th>Weekly strength</th><th>Opp. strength (SOS)</th><th>Exp. wins</th><th>Playoffs</th><th>1st</th><th>Last</th></tr></thead><tbody>
+    <p class="hint"><b>Read the playoff number, not the last-place one.</b> This league settles last place on a consolation ladder in Weeks 15&ndash;17, which the simulation does not play out &mdash; it stops at Week 14. Making the top 6 is what actually guarantees you finish above last, so that is the number to steer by. "Worst record" below is the regular-season proxy it replaces.</p>
+    <div class="kv"><div><span>Safe from last (top 6)</span><b class="${me.p_playoffs>0.5?'grade gA':'grade gC'}">${pct(me.p_playoffs)}</b></div><div><span>Your expected wins</span><b>${me.exp_wins} / 14</b></div><div><span>Worst record at W14</span><b class="muted">${pct(me.p_last)}</b></div><div><span>Schedule difficulty</span><b>#${[...o].sort((a,b)=>b.sos-a.sos).findIndex(x=>x.team===D.me)+1} hardest</b></div></div>
+    <table style="margin-top:12px"><thead><tr><th>#</th><th>Team</th><th>Weekly strength</th><th>Opp. strength (SOS)</th><th>Exp. wins</th><th>Playoffs (safe)</th><th>1st</th><th>Worst W14 record</th></tr></thead><tbody>
     ${o.map((x,i)=>`<tr class="${x.team===D.me?'me':''}"><td>${i+1}</td><td><b>${x.team}</b></td><td>${x.mu}</td><td>${x.sos}</td><td>${x.exp_wins}</td><td>${pct(x.p_playoffs)}</td><td>${pct(x.p_top)}</td><td>${pct(x.p_last)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function waivers(){

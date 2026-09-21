@@ -373,7 +373,13 @@ def compute(week=None, force=False):
     # when you are well behind, the swap that helps is the one with the higher ceiling,
     # even at a lower projection; when well ahead it is the one with the higher floor
     lean = None
-    if my_sim:
+    # a lean is advice about a swap, so it needs both a decision worth making and a player who
+    # can still be moved. Once every game has kicked off, or the matchup is already settled,
+    # there is nothing to advise and saying "protect the win" is noise.
+    movable = any(frac_of.get(x["key"], 1.0) > 0
+                  for x in list(me["lineup"]) + list(me["bench"]) if x.get("player"))
+    decided = bool(my_sim) and not 0.01 < my_sim["p"] < 0.99
+    if my_sim and movable and not decided:
         if my_sim["p"] < 0.35:
             lean = "ceiling"
         elif my_sim["p"] > 0.65:
@@ -473,7 +479,7 @@ def compute(week=None, force=False):
         "in_progress": any(f < 1 for f in left_frac.values()) and me["left"] > 0,
         "live_source": lv["source"],
         "close_calls": close, "alerts": alerts, "advice": advice, "first_lock": first_lock,
-        "lean": lean, "swaps": swaps[:3],
+        "lean": lean, "swaps": swaps[:3], "decided": decided, "movable": movable,
         "opp_injuries": ([{"player": q["player"], "pos": q["pos"], "status": q["inj"],
                            "detail": q.get("inj_detail", ""),
                            "starting": any(x.get("key") == q["key"] for x in opp["lineup"])}
@@ -576,6 +582,9 @@ def render_markdown(d):
     P("\nFloor and ceiling are the 10th and 90th percentile of where that player finishes, "
       "from his own fitted distribution.")
     if d["in_progress"]:
+        P("For a player whose game is under way they count the points he has already banked plus "
+          "the rest of his game, so his floor can sit above his current actual.")
+    if d["in_progress"]:
         P(f"\n**Live: {d['banked']} on the board, {d['left']} starters left to play.** Full-week projection {d['live_mean']}.")
         if d.get("live_source") != "espn":
             P("\n> Live scores are coming from nflverse because ESPN could not be reached. nflverse "
@@ -599,7 +608,11 @@ def render_markdown(d):
             P(f"vs {d['opp']}: {d['live_mean']} to {d['opp_live_mean']}, win probability {d['win_prob']:.0%}.{rng}\n")
     # Phrased by win probability, not by the current scoreboard. You can be trailing on
     # points and still be a heavy favourite when you have more players left to play.
-    if d.get("lean") == "ceiling":
+    if d.get("decided"):
+        P("This one is settled. Nothing on your bench changes the result.")
+    elif not d.get("movable"):
+        P("Every starter's game has kicked off, so the lineup is locked for the week.")
+    elif d.get("lean") == "ceiling":
         P(f"At {d['win_prob']:.0%} you are a heavy underdog, so the projection is the wrong thing to "
           "maximise. Take the bigger ceiling even at a lower projection: losing by less is worth nothing.")
     elif d.get("lean") == "floor":
