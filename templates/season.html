@@ -76,6 +76,19 @@ const $ = s => document.querySelector(s);
 // serves the live server, which recomputes on every load; STATIC is the difference.
 const STATIC = !!window.INLINE;
 let D = null, TAB = 'lineup', WEEK = null, ADV = null;
+// The built file is rewritten on disk under an open tab, and nothing tells the page. So
+// reload on a timer: leaving it open is then enough, with no keypress. The tab, week and
+// scroll position ride across in sessionStorage so it lands where it was rather than
+// snapping back to the top of the lineup every few minutes.
+const RELOAD_MINUTES = 5;
+function saveView(){ try { sessionStorage.setItem('view', JSON.stringify({TAB, WEEK, y:Math.round(window.scrollY)})); } catch(e){} }
+function restoreView(){
+  try {
+    const v = JSON.parse(sessionStorage.getItem('view') || 'null');
+    if(v){ TAB = v.TAB || TAB; if(v.WEEK && window.INLINE.weeks[String(v.WEEK)]) WEEK = v.WEEK; return v.y || 0; }
+  } catch(e){}
+  return 0;
+}
 const posTag = p => `<span class="pos ${p}">${p}</span>`;
 const pct = x => `${Math.round(x*100)}%`;
 const grade = g => g ? `<span class="grade g${g[0]}">${g}</span>` : '';
@@ -88,7 +101,7 @@ function render(){
   const sel=$('#week');
   if(!sel.options.length){ const ws = STATIC?Object.keys(window.INLINE.weeks).map(Number).sort((a,b)=>a-b):Array.from({length:17},(_,i)=>i+1);
     for(const w of ws){const o=document.createElement('option');o.value=w;o.textContent=w;sel.appendChild(o);} }
-  sel.value=D.week; $('#meta').textContent=`rankings from ${D.scraped} · ${STATIC?`built ${window.INLINE.built}`:`generated ${D.generated}`}`;
+  sel.value=D.week; $('#meta').textContent=`rankings from ${D.scraped} · ${STATIC?`built ${window.INLINE.built} · refreshes itself`:`generated ${D.generated}`}`;
   const E = D.espn||{}; const fb=$('#feed');
   fb.className = 'badge ' + (E.connected?'live':'guess');
   fb.textContent = E.connected ? 'ESPN feed · real lineups' : 'No ESPN feed · lineups estimated';
@@ -193,7 +206,14 @@ function wire(){
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{TAB=b.dataset.t; render();});
 $('#week').onchange=e=>{WEEK=+e.target.value; load(false);};
 $('#refresh').onclick=()=>load(true);
-load(false);
+if(STATIC){
+  const y = restoreView();
+  load(false).then(()=>window.scrollTo(0, y));
+  setInterval(()=>{ saveView(); location.reload(); }, RELOAD_MINUTES*60*1000);
+  window.addEventListener('beforeunload', saveView);
+} else {
+  load(false);
+}
 </script>
 </body>
 </html>

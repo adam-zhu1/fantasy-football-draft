@@ -66,6 +66,11 @@ otherwise -- so most firings cost nothing. The header shows when the file was bu
 stale one is visible. Remove the agent with
 `launchctl bootout gui/$(id -u)/com.adamzhu.fantasy-dashboard`.
 
+The page also reloads itself every 5 minutes, because rebuilding the file does not reach a
+tab that is already open: leaving it up on a second monitor during games is enough, with no
+keypress. It carries the current tab, week and scroll position across the reload in
+`sessionStorage`, so it lands where it was instead of snapping back to the top.
+
 This replaced a long-running Flask server as the default way in. A server is a process, and
 a process can die or go stale silently: one started on Sep 9 2026 was still serving
 two-week-old code on Sep 22 with nothing on the page to say so. A built file cannot rot that
