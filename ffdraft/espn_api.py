@@ -10,7 +10,7 @@ Those totals feed team ratings, which feed the playoff number the dashboard stee
 The league is private ("Make League Viewable to Public: No"), so the feed needs
 `data/espn_auth.json` holding the `espn_s2` and `SWID` cookies from a logged-in browser:
 
-    {"league_id": 29898692, "season": 2026, "swid": "{...}", "espn_s2": "..."}
+    {"league_id": <your league id>, "season": 2026, "swid": "{...}", "espn_s2": "..."}
 
 That file is gitignored and chmod 600; it is a login credential, not a config value. When it
 is absent or the cookies have expired, every function here returns None and callers fall
