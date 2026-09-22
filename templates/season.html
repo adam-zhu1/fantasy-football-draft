@@ -120,7 +120,9 @@ function lineup(){
     <table><thead><tr><th>Slot</th><th>Player</th><th>Opp</th><th>Game</th><th>Proj</th><th>Grade</th><th>Expert rank</th>${D.has_actuals?'<th>Actual</th>':''}</tr></thead>
     <tbody>${L.map(p=>p.player?playerRow(p,true):`<tr><td><b>${p.slot}</b></td><td colspan="6" class="lock">EMPTY — nobody eligible. Pick someone up.</td></tr>`).join('')}</tbody></table>
     <p style="margin:10px 0 0"><b>Projected total: ${D.mean}</b> <span class="muted">(± about ${D.sd})</span></p></div>
-  <div class="panel"><h2>2 · Alerts</h2>${D.alerts.map(a=>`<div class="alert ${a.level}">${a.text}</div>`).join('')}</div>
+  <div class="panel"><h2>2 · Alerts</h2>${D.alerts.map(a=>`<div class="alert ${a.level}">${a.text}</div>`).join('')}
+    ${(D.opp_injuries||[]).map(q=>`<div class="alert ${q.starting?'bad':'info'}"><b>${D.opp}</b>: ${posTag(q.pos)} <b>${q.player}</b> ${q.starting?'<b>is in his starting lineup</b> and':'(bench)'} is <b>${q.status}</b>${q.detail?` — ${q.detail}`:''}.</div>`).join('')}
+    ${(D.opp_injuries||[]).some(q=>q.starting)?`<p class="hint">A starter of his carrying a designation is the main thing that can move your ${D.win_prob!=null?pct(D.win_prob):''} — if he sits, your opponent's projection drops.</p>`:''}</div>
   ${(D.advice||[]).length?`<div class="panel"><h2>3 · What the analysts say about your players</h2>
     <p class="hint">FantasyPros' weekly writeups. <b>Start</b> / <b>sit</b> is their call for this week. A red row means their call disagrees with your lineup — worth a read, not an order. Click a name for the full note.</p>
     <table><thead><tr><th>Player</th><th>In lineup?</th><th>Their call</th><th>Proj</th></tr></thead><tbody>
