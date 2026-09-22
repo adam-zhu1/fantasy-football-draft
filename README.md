@@ -59,26 +59,24 @@ Tick "bot" on any slot with no manager. Fix a mis-attributed pick with the team 
 
 `dashboard.html` is the season dashboard with its data baked in. It needs no server, no
 network and no terminal: bookmark `file:///Users/adamzhu/Projects/fantasy-football-draft/dashboard.html`
-and reload it. A LaunchAgent (`~/Library/LaunchAgents/com.adamzhu.fantasy-dashboard.plist`)
-runs `build_dashboard.py` every 10 minutes and at login; the script itself decides whether a
-rebuild is due -- every 10 minutes while games are on (Thu/Sun/Mon evenings), hourly
-otherwise -- so most firings cost nothing. The header shows when the file was built, so a
-stale one is visible. Remove the agent with
-`launchctl bootout gui/$(id -u)/com.adamzhu.fantasy-dashboard`.
+and reload it.
+
+**Nothing runs in the background.** There is no scheduler, no daemon and no server: the file
+is rebuilt when Adam asks for an update, and sits there unchanged until then. The header
+stamps the build time, so how old it is, is always on the page. `build_dashboard.py --if-due`
+keeps the throttling logic for a scheduler if one is ever wanted again, but none is installed.
 
 Cost per build, after caching: about **6 MB and 3 seconds**, against 39 MB and 10 seconds
-before. Firings that decide no build is due cost 0.26 s and no network at all, and most
-firings are those. What made the difference: a finished game's box score (1.8 MB each, 32 of
+before. What made the difference: a finished game's box score (1.8 MB each, 32 of
 them) is written to `data/cache/espn` once and never fetched again; ESPN's injuries feed
 (8.7 MB) is held for 30 minutes; a played week's lineups (2.3 MB) are settled and cached
 forever; completed weeks are recomputed once a day rather than every build; and `rosters()`
 shares the current week's roster request with `lineups()` instead of pulling it twice.
 Clear `data/cache/espn` to force a full re-fetch, or run `--all` to recompute every week.
 
-The page also reloads itself every 5 minutes, because rebuilding the file does not reach a
-tab that is already open: leaving it up on a second monitor during games is enough, with no
-keypress. It carries the current tab, week and scroll position across the reload in
-`sessionStorage`, so it lands where it was instead of snapping back to the top.
+The page does not reload itself; Adam reloads when he wants to look. It does carry the
+current tab, week and scroll position across a reload in `sessionStorage`, so his own Cmd-R
+lands where he was instead of snapping back to the top.
 
 This replaced a long-running Flask server as the default way in. A server is a process, and
 a process can die or go stale silently: one started on Sep 9 2026 was still serving

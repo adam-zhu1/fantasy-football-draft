@@ -7,11 +7,12 @@ two-week-old code on Sep 22, and nothing on the page gave it away. A built file 
 that way. Every build runs the current code from scratch, and the file states when it was
 made, so a stale one is visible rather than silent.
 
-Run it from a LaunchAgent and open the file. The server is still there for when you want a
-recompute on demand.
+Nothing runs this on a schedule. It builds when asked, which is when Adam says "update".
 
-    python build_dashboard.py            # build if due (see below)
-    python build_dashboard.py --force    # build now
+    python build_dashboard.py            # build now
+    python build_dashboard.py --if-due   # build only if stale, for a scheduler if one ever
+                                         #   comes back: every 10 min in games, else hourly
+    python build_dashboard.py --all      # recompute every week, ignoring the cache
     python build_dashboard.py --weeks 3  # only the weeks listed, instead of 1..current
 """
 import argparse
@@ -32,8 +33,8 @@ CACHE = ROOT / "data" / "dashboard_cache.json"
 # current week is genuinely live.
 DONE_WEEK_HOURS = 24
 
-# The agent fires every 10 minutes; this decides whether there is any point. Games move the
-# numbers, and nothing else does, so rebuild fast while they are on and hourly otherwise.
+# Only consulted under --if-due. Games move the numbers and nothing else does, so a
+# scheduler would want to rebuild fast while they are on and hourly otherwise.
 # Weekday from Python's Monday=0: Thursday, Sunday, Monday.
 GAME_WINDOWS = {3: (17, 24), 6: (9, 24), 0: (17, 24)}
 FAST_MINUTES = 10
@@ -105,11 +106,13 @@ def build(weeks=None, all_weeks=False):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--if-due", dest="if_due", action="store_true",
+                    help="skip unless the file is stale; the default is to always build")
+    ap.add_argument("--force", action="store_true", help="accepted out of habit; building is the default")
     ap.add_argument("--weeks", type=int, nargs="+")
     ap.add_argument("--all", action="store_true", help="recompute every week, ignoring the cache")
     a = ap.parse_args()
-    go, why = (True, "forced") if a.force else due()
+    go, why = due() if a.if_due else (True, "asked for")
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     if not go:
         print(f"[{stamp}] skip — {why}")
