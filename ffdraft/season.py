@@ -346,8 +346,10 @@ def compute(week=None, force=False):
     # Who everyone ACTUALLY started, for this week and every week already played. This
     # overwrites the snapshots the tool guessed for weeks 1-2 before the league API was
     # wired up; a guessed lineup is not evidence worth preserving.
-    if espn_api.available() and espn_api.sync_lineups(snaps, range(1, week + 1)):
-        snap_dirty = True
+    espn_weeks = set()
+    if espn_api.available():
+        changed, espn_weeks = espn_api.sync_lineups(snaps, range(1, week + 1))
+        snap_dirty = snap_dirty or changed
 
     teams = {}
     for full, byp in L["rosters"].items():
@@ -509,6 +511,11 @@ def compute(week=None, force=False):
         "teams": {t: {"manager": T["manager"], "players": T["players"], "mean": T["mean"], "actual": T["actual"],
                       "banked": T["banked"], "live_mean": T["live_mean"], "left": T["left"]} for t, T in teams.items()},
         "weeks_with_matchups": sorted(matchups.keys()), "has_actuals": bool(actual),
+        # Whether the numbers about other managers rest on their real choices or on our
+        # guess at them. The dashboard says which, because the difference is about ten
+        # points a team and the failure mode (expired cookies) is silent.
+        "espn": {"connected": espn_api.available(), "rosters_as_of": L.get("as_of", ""),
+                 "real_weeks": sorted(espn_weeks), "this_week_real": week in espn_weeks},
     }
 
 

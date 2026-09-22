@@ -4,6 +4,7 @@ import json, traceback
 from flask import Flask, jsonify, render_template, request
 
 from ffdraft.config import ROOT
+from ffdraft import espn_api
 from ffdraft.season import compute, load_rosters, save_rosters, load_matchups, save_matchups, parse_schedule_paste, short, _CACHE
 
 app = Flask(__name__, template_folder=str(ROOT / "templates"))
@@ -43,6 +44,24 @@ def api_transaction():
         r.setdefault(b.get("add_pos", "WR"), []).append(b["add"].strip())
     save_rosters(L)
     _CACHE.pop("board", None)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/sync")
+def api_sync():
+    """Re-pull rosters and lineups from ESPN, bypassing the module's short-lived cache.
+
+    The feed is read on every run anyway; this is for when a waiver clears while the
+    dashboard is open and waiting five minutes for the cache to lapse is annoying.
+    """
+    if not espn_api.available():
+        return jsonify({"error": "no data/espn_auth.json — ESPN feed is not set up"}), 400
+    espn_api._CACHE.clear()
+    _CACHE.pop("rosters_synced", None)
+    _CACHE.pop("board", None)
+    if espn_api.rosters() is None:
+        return jsonify({"error": "ESPN refused the request — the cookies have probably expired"}), 502
+    load_rosters()
     return jsonify({"ok": True})
 
 

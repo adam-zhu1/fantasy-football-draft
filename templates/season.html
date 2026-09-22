@@ -48,6 +48,11 @@
   .muted { color:var(--muted); }
   textarea { width:100%; min-height:140px; font-family:ui-monospace, Menlo, monospace; font-size:12px; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .badge { font-size:12px; font-weight:700; padding:3px 9px; border-radius:20px; border:1px solid var(--line); white-space:nowrap; }
+  .badge.live { color:var(--good); border-color:#2f6b4a; background:#12211a; }
+  .badge.guess { color:var(--warn); border-color:#6b552f; background:#211c12; }
+  .src { font-size:12px; color:var(--muted); margin:4px 0 0; }
+  .src b.live { color:var(--good); } .src b.guess { color:var(--warn); }
 </style>
 </head>
 <body>
@@ -55,6 +60,7 @@
   <h1>RIP EVAN LU · Season Dashboard</h1>
   <label class="muted">Week <select id="week"></select></label>
   <span class="muted" id="meta"></span>
+  <span class="badge" id="feed"></span>
   <div class="spacer"></div>
   <button id="refresh" title="Re-download the latest expert rankings">⟳ Refresh rankings</button>
 </header>
@@ -76,6 +82,12 @@ async function load(refresh){ $('#main').innerHTML='<p class="hint">Loading expe
 function render(){
   const sel=$('#week'); if(!sel.options.length){ for(let w=1;w<=17;w++){const o=document.createElement('option');o.value=w;o.textContent=w;sel.appendChild(o);} }
   sel.value=D.week; $('#meta').textContent=`rankings from ${D.scraped} · generated ${D.generated}`;
+  const E = D.espn||{}; const fb=$('#feed');
+  fb.className = 'badge ' + (E.connected?'live':'guess');
+  fb.textContent = E.connected ? 'ESPN feed · real lineups' : 'No ESPN feed · lineups estimated';
+  fb.title = E.connected
+    ? `Reading every manager's actual starters from the ESPN league API. Rosters synced ${E.rosters_as_of||'—'}. Real lineups on file for weeks: ${(E.real_weeks||[]).join(', ')||'none'}.`
+    : 'data/espn_auth.json is missing or its cookies have expired, so other teams\u2019 lineups are assumed to be their best-projected one. That ran about 10 points a team off in Week 2. Re-copy espn_s2 and SWID from Chrome DevTools \u2192 Application \u2192 Cookies.';
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on', b.dataset.t===TAB));
   const f = {lineup, matchup, predict, power, outlook, waivers, rosters, manage}[TAB]; $('#main').innerHTML = f();
   wire();
@@ -98,6 +110,10 @@ function lineup(){
     ${D.close_calls.map(c=>`<div class="alert info">${c.slot}: <b>${c.starter}</b> (${c.starter_proj}) over ${c.bench} (${c.bench_proj})</div>`).join('')}</div>`:''}
   <div class="panel"><h2>Your bench</h2><table><thead><tr><th></th><th>Player</th><th>Opp</th><th>Game</th><th>Proj</th><th>Grade</th><th>Expert rank</th>${D.has_actuals?'<th>Actual</th>':''}</tr></thead><tbody>${B.map(p=>playerRow(p,false)).join('')}</tbody></table></div>`;
 }
+function srcNote(what, live, guess){
+  const real = (D.espn||{}).this_week_real;
+  return `<p class="src">${what} <b class="${real?'live':'guess'}">${real?live:guess}</b>.</p>`;
+}
 function matchup(){
   if(!D.opp) return `<div class="panel"><p class="hint">No opponent on file for week ${D.week}. Add the schedule in the Manage tab.</p></div>`;
   const wp = D.win_prob;
@@ -105,14 +121,16 @@ function matchup(){
   return `<div class="panel"><h2>Week ${D.week}: ${D.me} vs ${D.opp}</h2>
     <div class="kv"><div><span>Your win probability</span><b>${pct(wp)}</b></div><div><span>Projected</span><b>${D.mean} – ${D.opp_mean}</b></div><div><span>Verdict</span><b>${wp>0.58?'Favorite':wp<0.42?'Underdog':'Toss-up'}</b></div></div>
     <div class="bar"><div style="width:${wp*100}%"></div></div>
-    <p class="hint">Win probability assumes each lineup's score is roughly normal with the weekly swing of its players. ${wp<0.42?'As the underdog, prefer volatile players in close calls.':wp>0.58?'As the favorite, prefer consistent players in close calls.':'Close calls: pick either.'}</p></div>
+    <p class="hint">Win probability assumes each lineup's score is roughly normal with the weekly swing of its players. ${wp<0.42?'As the underdog, prefer volatile players in close calls.':wp>0.58?'As the favorite, prefer consistent players in close calls.':'Close calls: pick either.'}</p>
+    ${srcNote(`<b>${D.opp}</b>'s lineup`, 'is the one he has actually set in ESPN right now — he can still change it until his players lock', 'is a guess: his best-projected starters, which ran about 10 points a team off in Week 2')}</div>
     <div class="grid2">${side(D.me+' (you)', D.lineup, D.mean, true)}${side(D.opp, D.opp_lineup, D.opp_mean, false)}</div>`;
 }
 function predict(){
   if(!D.predictions.length) return `<div class="panel"><p class="hint">No matchups on file for week ${D.week}. Paste the ESPN schedule in the Manage tab.</p></div>`;
   return `<div class="panel"><h2>Week ${D.week} predictions</h2><table><thead><tr><th>Matchup</th><th>Proj</th><th>Proj</th><th>Favorite</th><th>Win %</th>${D.has_actuals?'<th>Actual</th>':''}</tr></thead><tbody>
     ${D.predictions.map(p=>{const fav=p.a_wp>=0.5?p.a:p.b; const me=[p.a,p.b].includes(D.me); return `<tr class="${me?'me':''}"><td><b>${p.a}</b> vs <b>${p.b}</b></td><td>${p.a_proj}</td><td>${p.b_proj}</td><td><b>${fav}</b></td><td>${pct(Math.max(p.a_wp,1-p.a_wp))}</td>${D.has_actuals?`<td>${p.a_actual??''} – ${p.b_actual??''}</td>`:''}</tr>`}).join('')}</tbody></table>
-    <p class="hint">Weeks with matchups on file: ${D.weeks_with_matchups.join(', ')||'none'}.</p></div>`;
+    <p class="hint">Weeks with matchups on file: ${D.weeks_with_matchups.join(', ')||'none'}.</p>
+    ${srcNote('Every lineup here', 'is what that manager has actually set in ESPN', 'is that team\u2019s best-projected lineup, not necessarily what its manager will start')}</div>`;
 }
 function power(){
   return `<div class="panel"><h2>Power rankings</h2><p class="hint"><b>Season strength</b>: projected season points of each team's best starters (QB, 2 RB, 2 WR, TE). <b>Depth</b>: value of their 5th–9th best RB/WR, the injury insurance. <b>This week</b>: projected points of this week's best lineup.</p>
@@ -124,6 +142,9 @@ function outlook(){
   const o = D.outlook; const me = o.find(x=>x.team===D.me);
   return `<div class="panel"><h2>Season outlook — ${(15-D.week)} regular-season weeks simulated 4,000 times</h2>
     <p class="hint">Each team's weekly score is drawn around its projected strength; every remaining matchup on the schedule is played out. Top 6 make the playoffs. This ignores injuries and trades, so treat it as a baseline, not a forecast.</p>
+    ${(D.espn||{}).connected
+      ? `<p class="src">Team strength is blended with <b class="live">what every team actually scored</b> in weeks ${(D.espn.real_weeks||[]).join(', ')}, read from ESPN&rsquo;s own finals rather than re-scored from assumed lineups.</p>`
+      : `<p class="src">Team strength leans on <b class="guess">weekly totals estimated from best-projected lineups</b>, which ran about 10 points a team off in Week 2. Restore the ESPN feed before trusting these numbers.</p>`}
     <p class="hint"><b>Read the playoff number, not the last-place one.</b> This league settles last place on a consolation ladder in Weeks 15&ndash;17, which the simulation does not play out &mdash; it stops at Week 14. Making the top 6 is what actually guarantees you finish above last, so that is the number to steer by. "Worst record" below is the regular-season proxy it replaces.</p>
     <div class="kv"><div><span>Safe from last (top 6)</span><b class="${me.p_playoffs>0.5?'grade gA':'grade gC'}">${pct(me.p_playoffs)}</b></div><div><span>Your expected wins</span><b>${me.exp_wins} / 14</b></div><div><span>Worst record at W14</span><b class="muted">${pct(me.p_last)}</b></div><div><span>Schedule difficulty</span><b>#${[...o].sort((a,b)=>b.sos-a.sos).findIndex(x=>x.team===D.me)+1} hardest</b></div></div>
     <table style="margin-top:12px"><thead><tr><th>#</th><th>Team</th><th>Weekly strength</th><th>Opp. strength (SOS)</th><th>Exp. wins</th><th>Playoffs (safe)</th><th>1st</th><th>Worst W14 record</th></tr></thead><tbody>
@@ -135,20 +156,29 @@ function waivers(){
     ${D.waivers.map(w=>`<tr><td><b>${w.player}</b></td><td>${posTag(w.pos)}</td><td class="muted">${w.team}</td><td>${w.season_vbd}</td><td>${w.week_proj}</td><td class="muted">${w.drop||''}</td><td class="${w.worth_it?'grade gA':'muted'}">${w.gain>0?'+':''}${w.gain}${w.worth_it?' ✔':''}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function rosters(){
-  return `<div class="grid3">${Object.entries(D.teams).map(([t,T])=>`<div class="card ${t===D.me?'me':''}"><h3>${t} <span class="muted">${T.manager}</span></h3><div class="muted">this week ${T.mean}${T.actual!=null?` · actual ${T.actual}`:''}</div>
+  const E = D.espn||{};
+  return `<p class="src">${E.connected?`Synced from the ESPN league API &middot; <b class="live">${E.rosters_as_of||'just now'}</b>`:'<b class="guess">Hand-maintained</b> &mdash; add/drop moves since the last manual edit are missing.'}</p>
+  <div class="grid3">${Object.entries(D.teams).map(([t,T])=>`<div class="card ${t===D.me?'me':''}"><h3>${t} <span class="muted">${T.manager}</span></h3><div class="muted">this week ${T.mean}${T.actual!=null?` · actual ${T.actual}`:''}</div>
     ${['QB','RB','WR','TE','K','DST'].map(pos=>{const ps=T.players.filter(p=>p.pos===pos); return ps.length?`<div style="margin-top:4px">${posTag(pos)} ${ps.map(p=>p.player).join(', ')}</div>`:''}).join('')}</div>`).join('')}</div>`;
 }
 function manage(){
-  const teams = Object.keys(D.teams);
-  return `<div class="panel"><h2>Record an add / drop</h2><p class="hint">After any roster move in ESPN (yours or another team's), record it here so the rankings and waiver list stay right.</p>
-    <div class="row"><select id="tx-team">${teams.map(t=>`<option ${t===D.me?'selected':''}>${t}</option>`).join('')}</select>
-      <input id="tx-drop" placeholder="Drop (exact name, optional)"> <input id="tx-add" placeholder="Add (name)"> <select id="tx-pos"><option>WR</option><option>RB</option><option>QB</option><option>TE</option><option>K</option><option>DST</option></select>
-      <button class="primary" id="tx-go">Save</button></div></div>
+  const teams = Object.keys(D.teams); const E = D.espn||{};
+  const roster = E.connected
+    ? `<div class="panel"><h2>Rosters</h2>
+       <p class="hint">Every roster is pulled straight from ESPN on each run, so add/drops record themselves &mdash; there is nothing to type here any more. Last sync <b>${E.rosters_as_of||'—'}</b>.</p>
+       <div class="row"><button class="primary" id="sync-go">Sync from ESPN now</button><span class="muted" id="sync-out"></span></div></div>`
+    : `<div class="panel"><h2>Record an add / drop</h2>
+       <p class="hint">The ESPN feed is off, so rosters are hand-maintained: after any move (yours or another team's), record it here or the rankings and waiver list go stale. Setting up <code>data/espn_auth.json</code> makes this automatic.</p>
+       <div class="row"><select id="tx-team">${teams.map(t=>`<option ${t===D.me?'selected':''}>${t}</option>`).join('')}</select>
+         <input id="tx-drop" placeholder="Drop (exact name, optional)"> <input id="tx-add" placeholder="Add (name)"> <select id="tx-pos"><option>WR</option><option>RB</option><option>QB</option><option>TE</option><option>K</option><option>DST</option></select>
+         <button class="primary" id="tx-go">Save</button></div></div>`;
+  return roster + `
   <div class="panel"><h2>Fantasy schedule</h2><p class="hint">Weeks on file: ${D.weeks_with_matchups.join(', ')||'none'}. Open ESPN → League → Schedule, select all, copy, and paste the whole page here. I'll pull out the matchups.</p>
     <textarea id="sched"></textarea><div class="row" style="margin-top:8px"><button class="primary" id="sched-go">Parse schedule</button><span class="muted" id="sched-out"></span></div></div>`;
 }
 function wire(){
   document.querySelectorAll('tr[data-adv]').forEach(tr=>tr.onclick=()=>{ADV = ADV===+tr.dataset.adv?null:+tr.dataset.adv; render();});
+  const sy=$('#sync-go'); if(sy) sy.onclick=async()=>{ $('#sync-out').textContent='Syncing…'; const j=await api('/api/sync',{}); if(j.ok){ toast('Synced from ESPN'); load(false); } else { $('#sync-out').textContent=j.error||'failed'; } };
   const go=$('#tx-go'); if(go) go.onclick=async()=>{ const j=await api('/api/transaction',{team:$('#tx-team').value, drop:$('#tx-drop').value.trim(), add:$('#tx-add').value.trim(), add_pos:$('#tx-pos').value}); if(j.ok){toast('Saved'); load(false);} };
   const sg=$('#sched-go'); if(sg) sg.onclick=async()=>{ const j=await api('/api/schedule',{paste:$('#sched').value}); if(j.ok){ $('#sched-out').textContent=`Parsed weeks: ${j.weeks_parsed.join(', ')||'none found'}`; toast('Schedule saved'); } };
 }

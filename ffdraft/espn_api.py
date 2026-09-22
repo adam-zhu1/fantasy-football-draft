@@ -195,17 +195,22 @@ def team_totals(week):
 
 
 def sync_lineups(snaps, weeks):
-    """Overwrite frozen lineup snapshots with the real ones. Returns True if anything moved.
+    """Overwrite frozen lineup snapshots with the real ones.
+
+    Returns (changed, real_weeks): whether anything moved, and which weeks the feed could
+    actually speak for, so the report can say which numbers rest on real lineups and which
+    are still the old guess.
 
     Real lineups win over ours unconditionally, including for weeks already recorded: a
     snapshot we guessed is not evidence, it is the error we are here to remove.
     """
-    changed = False
+    changed, real = False, set()
     for w in weeks:
-        real = lineups(w)
-        if not real:
+        got = lineups(w)
+        if not got:
             continue
-        if snaps.get(str(w)) != real:
-            snaps[str(w)] = real
+        real.add(int(w))
+        if snaps.get(str(w)) != got:
+            snaps[str(w)] = got
             changed = True
-    return changed
+    return changed, real
