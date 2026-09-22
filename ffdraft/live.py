@@ -11,12 +11,13 @@ this league's own rules from settings.json reproduces ESPN's fantasy points exac
 Public entry point is `live_week`. Everything degrades to empty on a network failure so the
 caller can fall back to nflverse.
 """
+import json
 import re
 import time
 
 import requests
 
-from .config import load_settings
+from .config import DATA, load_settings
 from .names import norm_name, norm_team
 
 S = load_settings()
@@ -24,6 +25,11 @@ API = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 TIMEOUT = 12
 _CACHE = {}
 _TTL = 45          # seconds; ESPN updates roughly every minute during a game
+
+# A finished game's box score never changes, and each one is about 1.8 MB. Re-fetching every
+# completed game on every run cost 28 MB a build, which matters once a scheduled job is doing
+# it six times an hour. Finals go to disk once and are read from there forever after.
+FINAL_DIR = DATA / "cache" / "espn"
 
 # A regulation game is 60 minutes of clock. Used to judge how much of a player's
 # projection is still ahead of him while his game is in progress.
@@ -35,11 +41,25 @@ _TWO_PT = re.compile(r"\(([^)]*?)two-point conversion[^)]*\)", re.I)
 _NAME_IN_2PT = re.compile(r"([A-Z][A-Za-z.'\-]+(?:\s+[A-Z][A-Za-z.'\-]+)+)")
 
 
-def _get(url, ttl=None):
-    """GET and parse JSON, cached briefly. Returns None on any failure."""
+def _get(url, ttl=None, disk_key=None, disk_ttl=None):
+    """GET and parse JSON, cached briefly. Returns None on any failure.
+
+    `disk_key` keeps the response in data/cache/espn so it survives between runs, which is
+    what makes a scheduled build cheap. `disk_ttl` is how long that copy stays good, in
+    seconds; None means forever, for a settled thing like a finished game's box score.
+    """
     hit = _CACHE.get(url)
     if hit and time.time() - hit[0] < (_TTL if ttl is None else ttl):
         return hit[1]
+    if disk_key:
+        f = FINAL_DIR / f"{disk_key}.json"
+        try:
+            if disk_ttl is None or time.time() - f.stat().st_mtime < disk_ttl:
+                data = json.loads(f.read_text())
+                _CACHE[url] = (time.time(), data)
+                return data
+        except (OSError, ValueError):
+            pass
     try:
         r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
         r.raise_for_status()
@@ -47,6 +67,12 @@ def _get(url, ttl=None):
     except Exception:
         return hit[1] if hit else None
     _CACHE[url] = (time.time(), data)
+    if disk_key:
+        try:
+            FINAL_DIR.mkdir(parents=True, exist_ok=True)
+            (FINAL_DIR / f"{disk_key}.json").write_text(json.dumps(data))
+        except OSError:
+            pass
     return data
 
 
@@ -217,12 +243,13 @@ def _dst_points(sections, opp_sections, opp_team_stats, opp_score, safeties, dd)
     return total
 
 
-def game_points(event_id, team_full_names):
+def game_points(event_id, team_full_names, final=False):
     """League-scored points for every player and team defense in one game.
 
-    Returns {player_key_or_dst_name: points}. Empty if ESPN is unreachable.
+    Returns {player_key_or_dst_name: points}. Empty if ESPN is unreachable. A `final` game
+    is read from disk after the first fetch, since its box score is settled.
     """
-    d = _get(f"{API}/summary?event={event_id}")
+    d = _get(f"{API}/summary?event={event_id}", disk_key=f"summary_{event_id}" if final else None)
     if not d:
         return {}
     sc = S["scoring_detail"]
@@ -299,7 +326,7 @@ def live_week(week, team_full_names, season=None):
             if g["state"] == "post":
                 final.add(t)
         if g["state"] in ("in", "post"):
-            got = game_points(g["id"], team_full_names)
+            got = game_points(g["id"], team_full_names, final=g["state"] == "post")
             if got:
                 points.update(got)
                 covered.update(g["teams"])
@@ -326,6 +353,9 @@ def team_full_names():
 OUT_STATUSES = {"Out", "Injured Reserve", "Suspension", "Physically Unable to Perform",
                 "Non Football Injury", "Practice Squad"}
 _INJ_TTL = 1800     # the payload is several megabytes and designations move slowly
+# ...and it is 8.7 MB, which a build running six times an hour cannot keep re-downloading.
+# Half an hour on disk still catches a Sunday-morning inactive well before kickoff.
+_INJ_DISK_TTL = 1800
 
 
 def injuries():
@@ -333,7 +363,7 @@ def injuries():
 
     Closes the gap where the report told you to go and check ESPN's Q / D / O tags yourself.
     """
-    d = _get(f"{API}/injuries", ttl=_INJ_TTL)
+    d = _get(f"{API}/injuries", ttl=_INJ_TTL, disk_key="injuries", disk_ttl=_INJ_DISK_TTL)
     out = {}
     if not d:
         return out

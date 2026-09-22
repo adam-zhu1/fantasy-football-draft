@@ -66,6 +66,15 @@ otherwise -- so most firings cost nothing. The header shows when the file was bu
 stale one is visible. Remove the agent with
 `launchctl bootout gui/$(id -u)/com.adamzhu.fantasy-dashboard`.
 
+Cost per build, after caching: about **6 MB and 3 seconds**, against 39 MB and 10 seconds
+before. Firings that decide no build is due cost 0.26 s and no network at all, and most
+firings are those. What made the difference: a finished game's box score (1.8 MB each, 32 of
+them) is written to `data/cache/espn` once and never fetched again; ESPN's injuries feed
+(8.7 MB) is held for 30 minutes; a played week's lineups (2.3 MB) are settled and cached
+forever; completed weeks are recomputed once a day rather than every build; and `rosters()`
+shares the current week's roster request with `lineups()` instead of pulling it twice.
+Clear `data/cache/espn` to force a full re-fetch, or run `--all` to recompute every week.
+
 The page also reloads itself every 5 minutes, because rebuilding the file does not reach a
 tab that is already open: leaving it up on a second monitor during games is enough, with no
 keypress. It carries the current tab, week and scroll position across the reload in

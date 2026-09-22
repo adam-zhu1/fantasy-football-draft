@@ -25,6 +25,7 @@ from .config import DATA
 from .names import norm_name
 
 AUTH_FILE = DATA / "espn_auth.json"
+DISK_DIR = DATA / "cache" / "espn"
 BASE = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons"
 TIMEOUT = 20
 TTL = 300
@@ -51,9 +52,14 @@ def available():
     return auth() is not None
 
 
-def _get(views, week=None, season_level=False):
+def _get(views, week=None, season_level=False, disk_key=None):
     """One cached GET. Returns None rather than raising: a dead feed should degrade the
-    report, not kill it mid-run on a Sunday morning."""
+    report, not kill it mid-run on a Sunday morning.
+
+    `disk_key` keeps the response between runs, for a week that is over and whose lineups
+    can no longer change. Each of these is about 2.3 MB, so a scheduled build refetching
+    every played week adds up fast.
+    """
     a = auth()
     if a is None:
         return None
@@ -61,6 +67,14 @@ def _get(views, week=None, season_level=False):
     hit = _CACHE.get(key)
     if hit and time.time() - hit[1] < TTL:
         return hit[0]
+    if disk_key:
+        f = DISK_DIR / f"{disk_key}.json"
+        try:
+            d = json.loads(f.read_text())
+            _CACHE[key] = (d, time.time())
+            return d
+        except (OSError, ValueError):
+            pass
     url = f"{BASE}/{a['season']}" if season_level else \
           f"{BASE}/{a['season']}/segments/0/leagues/{a['league_id']}"
     params = {"view": list(views)}
@@ -76,6 +90,12 @@ def _get(views, week=None, season_level=False):
     except (requests.RequestException, ValueError):
         return None
     _CACHE[key] = (d, time.time())
+    if disk_key:
+        try:
+            DISK_DIR.mkdir(parents=True, exist_ok=True)
+            (DISK_DIR / f"{disk_key}.json").write_text(json.dumps(d))
+        except OSError:
+            pass
     return d
 
 
@@ -136,7 +156,10 @@ def rosters():
     This replaces pasting the League > Rosters page by hand, which went stale the moment
     anyone touched the waiver wire.
     """
-    d = _get(["mRoster", "mTeam"])
+    # Deliberately the same request lineups() makes for the current week, so the two share
+    # one cache entry instead of pulling the same 2.3 MB twice per build. The per-week roster
+    # carries every entry, bench and IR included, which is all this needs.
+    d = _get(["mRoster"], week=current_week())
     if d is None:
         return None
     lab = team_labels()
@@ -157,7 +180,9 @@ def lineups(week):
 
     Same shape as the frozen snapshots in week_lineups.json, so it drops straight in.
     """
-    d = _get(["mRoster"], week=week)
+    cur = current_week()
+    over = cur is not None and week < cur
+    d = _get(["mRoster"], week=week, disk_key=f"lineups_w{week}" if over else None)
     if d is None:
         return None
     lab = team_labels()
