@@ -17,3 +17,6 @@ data/league_rosters.json
 data/league_schedule.json
 week*_report.md
 data/week_lineups.json
+
+# ESPN session cookies (espn_s2 / SWID) — login credentials, never commit
+data/espn_auth.json

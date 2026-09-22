@@ -70,16 +70,37 @@ Do not go back to the nflverse feed for live scoring. It publishes finals hours 
 he was really on 104.26 and put the matchup at 75% the wrong way. nflverse is kept only as the fallback for
 when ESPN is unreachable, and the report says so in a callout when it falls back.
 
-Known limitation: we know every team's roster but not which players the other managers actually started, so
-opponent totals assume each one starts his best-projected lineup. When a manager starts someone else the
-tool's number for that team will drift from ESPN's.
+### The league API (real lineups)
+
+With `data/espn_auth.json` in place, `ffdraft/espn_api.py` reads the league from ESPN's fantasy feed as
+you: every team's real starting lineup, ESPN's own weekly finals, and all 12 rosters. The file holds your
+`espn_s2` and `SWID` browser cookies plus the league id, is gitignored and chmod 600, and is a login
+credential rather than a config value. Without it every function there returns None and the tool falls
+back to the guess described below, so it still runs for anyone who has not set it up.
+
+This closed the largest error in the model. Before it, we knew every team's roster but not which players
+the other managers actually started, so opponent totals assumed each manager starts his best-projected
+lineup. Measured against ESPN's Week 2 finals that ran a mean 10.6 points off across the twelve teams, in
+both directions -- Walter was 32 points underrated, Prithish 27 points over -- and only the two lineups
+read live from the box score (yours and your opponent's) were right. Those totals feed team ratings, which
+feed the playoff number the dashboard tells you to steer by.
+
+Rosters re-sync from the feed on every run, so the waiver wire no longer silently rots the file.
+`prior_results` prefers ESPN's own final for a completed week over re-scoring the box score: the official
+number already carries stat corrections, and it still counts a player who has since been dropped and whom
+the current roster no longer lists. After backfilling Weeks 1-2 this way, every team's rebuilt record and
+points-for match ESPN's standings page exactly.
+
+If the cookies expire (logging out of ESPN everywhere invalidates them), the feed starts returning None and
+the tool quietly reverts to guessing. Re-copy both values from Chrome DevTools > Application > Cookies.
 
 Lineups freeze once a week kicks off, into `data/week_lineups.json` (local-only). Without that, re-running
 after the next scrape re-picks a finished week's starters using projections that did not exist at kickoff:
 the Monday Week 1 scrape swapped an 18-point tight end into the opponent's lineup in place of the 2.6 he
-actually started, inflating him by 15. Week 1's entry for `green fn` and `Prithish's Perfect Team` was
-seeded from the real ESPN box score; the other ten are the best-projected lineup frozen after the fact. To
-correct a team's frozen lineup, edit that file. Deleting it re-freezes every week from today's projections,
+actually started, inflating him by 15. Every week's entry is now overwritten from the league API with the
+lineup each manager really submitted, which is why the guessed snapshots for Weeks 1-2 were discarded
+rather than kept. Without the cookies, entries fall back to the best-projected lineup frozen after the
+fact; to correct one by hand, edit that file. Deleting it re-freezes every week from today's projections,
 which is wrong for weeks already played.
 
 ### Injuries

@@ -11,6 +11,7 @@ from .config import ROOT, DATA, load_settings
 from .names import norm_name, norm_team
 from . import variance as VAR
 from .ratings import team_ratings
+from . import espn_api
 
 S = load_settings()
 LINEUP = [("QB", 1), ("RB", 2), ("WR", 2), ("TE", 1), ("FLEX", 1), ("DST", 1), ("K", 1)]
@@ -121,12 +122,27 @@ def team_games(sch, week):
 
 # ---------------------------------------------------------------- league files
 def load_rosters():
+    """League rosters, refreshed from ESPN when the cookies are configured.
+
+    The hand-maintained file goes stale the moment anyone touches the waiver wire, and a
+    stale roster silently projects a dropped player onto his old team. ESPN is the truth;
+    the file is kept as the offline fallback and so the diff stays reviewable in git-less
+    form.
+    """
     L = json.loads(ROSTERS_FILE.read_text())
+    if espn_api.available() and not _CACHE.get("rosters_synced"):
+        _CACHE["rosters_synced"] = True
+        live = espn_api.rosters()
+        if live and live != L.get("rosters"):
+            L["rosters"] = live
+            L["as_of"] = datetime.now().strftime("%Y-%m-%d %H:%M (synced from ESPN league API)")
+            L["records"] = espn_api.records() or L.get("records", {})
+            save_rosters(L)
     return L
 
 
 def save_rosters(L):
-    ROSTERS_FILE.write_text(json.dumps(L, indent=1))
+    ROSTERS_FILE.write_text(json.dumps(L, indent=1, ensure_ascii=False))
 
 
 def short(team):
@@ -327,6 +343,11 @@ def compute(week=None, force=False):
     snaps = load_week_lineups(); wk = str(week)
     week_started = any(f < 1 for f in left_frac.values())
     snap_dirty = False
+    # Who everyone ACTUALLY started, for this week and every week already played. This
+    # overwrites the snapshots the tool guessed for weeks 1-2 before the league API was
+    # wired up; a guessed lineup is not evidence worth preserving.
+    if espn_api.available() and espn_api.sync_lineups(snaps, range(1, week + 1)):
+        snap_dirty = True
 
     teams = {}
     for full, byp in L["rosters"].items():
@@ -514,6 +535,12 @@ def prior_results(matchups, upto_week, rk, b, sch):
             players = [player_row(pl, pos, rk, b, games, w, lv["points"]) for pos, ps in byp.items() for pl in ps]
             lineup, _, _, _ = lineup_from_snapshot(players, snap[t])
             scores[t] = live_totals(lineup, lv["left"], lv.get("covered", ()))["banked"]
+        # ESPN's own final beats re-scoring the box score: it already carries stat
+        # corrections, and it still counts a player who has since been dropped, whom the
+        # current roster no longer lists and our rebuilt lineup would score as zero.
+        official = espn_api.team_totals(w) if espn_api.available() else None
+        if official:
+            scores.update(official)
         for a, bb in matchups.get(w, []):
             if a in scores and bb in scores:
                 wins[a] = wins.get(a, 0) + (1 if scores[a] > scores[bb] else 0)
