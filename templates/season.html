@@ -72,22 +72,30 @@
 <div class="toast" id="toast"></div>
 <script>
 const $ = s => document.querySelector(s);
+// A built file carries its weeks inlined and talks to nothing. The same template still
+// serves the live server, which recomputes on every load; STATIC is the difference.
+const STATIC = !!window.INLINE;
 let D = null, TAB = 'lineup', WEEK = null, ADV = null;
 const posTag = p => `<span class="pos ${p}">${p}</span>`;
 const pct = x => `${Math.round(x*100)}%`;
 const grade = g => g ? `<span class="grade g${g[0]}">${g}</span>` : '';
 function toast(m){ const t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none',3000); }
 async function api(path, body){ const r = await fetch(path, body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}); const j = await r.json(); if(j.error){toast(j.error);} return j; }
-async function load(refresh){ $('#main').innerHTML='<p class="hint">Loading expert rankings…</p>'; D = await api(`/api/week?${WEEK?`week=${WEEK}&`:''}${refresh?'refresh=1':''}`); if(!D||D.error) return; WEEK=D.week; render(); }
+async function load(refresh){
+  if(STATIC){ D = window.INLINE.weeks[String(WEEK||window.INLINE.week)]; if(!D) { $('#main').innerHTML=`<p class="hint">Week ${WEEK} was not built into this file.</p>`; return; } WEEK=D.week; render(); return; }
+  $('#main').innerHTML='<p class="hint">Loading expert rankings…</p>'; D = await api(`/api/week?${WEEK?`week=${WEEK}&`:''}${refresh?'refresh=1':''}`); if(!D||D.error) return; WEEK=D.week; render(); }
 function render(){
-  const sel=$('#week'); if(!sel.options.length){ for(let w=1;w<=17;w++){const o=document.createElement('option');o.value=w;o.textContent=w;sel.appendChild(o);} }
-  sel.value=D.week; $('#meta').textContent=`rankings from ${D.scraped} · generated ${D.generated}`;
+  const sel=$('#week');
+  if(!sel.options.length){ const ws = STATIC?Object.keys(window.INLINE.weeks).map(Number).sort((a,b)=>a-b):Array.from({length:17},(_,i)=>i+1);
+    for(const w of ws){const o=document.createElement('option');o.value=w;o.textContent=w;sel.appendChild(o);} }
+  sel.value=D.week; $('#meta').textContent=`rankings from ${D.scraped} · ${STATIC?`built ${window.INLINE.built}`:`generated ${D.generated}`}`;
   const E = D.espn||{}; const fb=$('#feed');
   fb.className = 'badge ' + (E.connected?'live':'guess');
   fb.textContent = E.connected ? 'ESPN feed · real lineups' : 'No ESPN feed · lineups estimated';
   fb.title = E.connected
     ? `Reading every manager's actual starters from the ESPN league API. Rosters synced ${E.rosters_as_of||'—'}. Real lineups on file for weeks: ${(E.real_weeks||[]).join(', ')||'none'}.`
     : 'data/espn_auth.json is missing or its cookies have expired, so other teams\u2019 lineups are assumed to be their best-projected one. That ran about 10 points a team off in Week 2. Re-copy espn_s2 and SWID from Chrome DevTools \u2192 Application \u2192 Cookies.';
+  if(STATIC){ $('#refresh').style.display='none'; document.querySelectorAll('#tabs button[data-t="manage"]').forEach(b=>b.style.display='none'); if(TAB==='manage') TAB='lineup'; }
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on', b.dataset.t===TAB));
   const f = {lineup, matchup, predict, power, outlook, waivers, rosters, manage}[TAB]; $('#main').innerHTML = f();
   wire();

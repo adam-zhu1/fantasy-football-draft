@@ -52,6 +52,31 @@ Tick "bot" on any slot with no manager. Fix a mis-attributed pick with the team 
 5. If the page dies and won't come back: draft off the printed `board.txt`, crossing names off.
 
 ## In-season (Part 5)
+
+### The dashboard (just reload the file)
+
+    open dashboard.html        # or double-click "Open Dashboard.command"
+
+`dashboard.html` is the season dashboard with its data baked in. It needs no server, no
+network and no terminal: bookmark `file:///Users/adamzhu/Projects/fantasy-football-draft/dashboard.html`
+and reload it. A LaunchAgent (`~/Library/LaunchAgents/com.adamzhu.fantasy-dashboard.plist`)
+runs `build_dashboard.py` every 10 minutes and at login; the script itself decides whether a
+rebuild is due -- every 10 minutes while games are on (Thu/Sun/Mon evenings), hourly
+otherwise -- so most firings cost nothing. The header shows when the file was built, so a
+stale one is visible. Remove the agent with
+`launchctl bootout gui/$(id -u)/com.adamzhu.fantasy-dashboard`.
+
+This replaced a long-running Flask server as the default way in. A server is a process, and
+a process can die or go stale silently: one started on Sep 9 2026 was still serving
+two-week-old code on Sep 22 with nothing on the page to say so. A built file cannot rot that
+way, because every build runs current code from scratch.
+
+`season_server.py` is still there for live recomputation on demand (`Start Season
+Dashboard.command`, http://127.0.0.1:5056). It is the only way to use the Manage tab, since
+the built file has nothing to POST to. Both render from the same `templates/season.html`.
+
+### The weekly report
+
     python week.py             # this week's report -> weekN_report.md
 Prints the lineup to enter in ESPN (with lock times), alerts (byes, missing from rankings), your matchup win
 probability, predictions for every matchup, power rankings, and waiver targets. Uses FantasyPros weekly

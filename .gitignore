@@ -20,3 +20,7 @@ data/week_lineups.json
 
 # ESPN session cookies (espn_s2 / SWID) — login credentials, never commit
 data/espn_auth.json
+
+# built dashboard: carries real names and rosters, same as league_rosters.json
+dashboard.html
+data/dashboard_build.log
